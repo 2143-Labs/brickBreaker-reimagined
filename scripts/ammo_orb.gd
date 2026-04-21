@@ -1,4 +1,5 @@
 extends Area2D
+
 var collected: bool = false
 
 func _ready():

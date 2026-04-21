@@ -2,6 +2,7 @@ extends CharacterBody2D
 
 signal ball_returned
 signal ball_landed(x_pos: float)
+
 var direction: Vector2 = Vector2.ZERO
 var speed: float = 800.0
 var damage: int = 1
@@ -15,6 +16,7 @@ func _ready():
 
 func _draw():
     draw_circle(Vector2.ZERO, 8, Color(0.3, 0.55, 0.95))
+
 func _physics_process(delta):
     if not launched or not is_active:
         return
@@ -27,6 +29,13 @@ func _physics_process(delta):
         var collider = collision.get_collider()
         if collider.has_method("take_damage"):
             collider.take_damage(int(damage * damage_multiplier))
+            var manager = get_tree().get_first_node_in_group("game_manager")
+            if manager and manager.sound_manager:
+                manager.sound_manager.play_hit()
+        else:
+            var manager = get_tree().get_first_node_in_group("game_manager")
+            if manager and manager.sound_manager:
+                manager.sound_manager.play_bounce()
 
     if position.y > 540:
         is_active = false

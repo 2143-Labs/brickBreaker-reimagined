@@ -1,12 +1,16 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=8 format=3 uid="uid://b3abbffunrn0k"]
 
-[ext_resource type="Script" path="res://scripts/game_manager.gd" id="1"]
+[ext_resource type="Script" uid="uid://d1b2plojemut7" path="res://scripts/game_manager.gd" id="1"]
+[ext_resource type="Script" uid="uid://bik3xdp2boptc" path="res://scripts/magazine.gd" id="2"]
+[ext_resource type="FontFile" uid="uid://b0puum8k02teh" path="res://assets/fonts/Inter.ttf" id="3"]
+[ext_resource type="Script" uid="uid://bk4iuea8vgtba" path="res://scripts/sound_manager.gd" id="4"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_left"]
-size = Vector2(10, 440)
+size = Vector2(10, 600)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_right"]
-size = Vector2(10, 440)
+size = Vector2(10, 600)
+
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_top"]
 size = Vector2(374, 10)
 
@@ -20,24 +24,23 @@ anchor_bottom = 1.0
 color = Color(0.93, 0.93, 0.94, 1)
 
 [node name="Arena" type="Node2D" parent="."]
+
 [node name="LeftWall" type="StaticBody2D" parent="Arena"]
-position = Vector2(8, 300)
-collision_layer = 1
+position = Vector2(8, 380)
 collision_mask = 0
 
 [node name="LeftCollision" type="CollisionShape2D" parent="Arena/LeftWall"]
 shape = SubResource("RectangleShape2D_left")
 
 [node name="RightWall" type="StaticBody2D" parent="Arena"]
-position = Vector2(382, 300)
-collision_layer = 1
+position = Vector2(382, 380)
 collision_mask = 0
 
 [node name="RightCollision" type="CollisionShape2D" parent="Arena/RightWall"]
 shape = SubResource("RectangleShape2D_right")
+
 [node name="TopWall" type="StaticBody2D" parent="Arena"]
 position = Vector2(195, 75)
-collision_layer = 1
 collision_mask = 0
 
 [node name="TopCollision" type="CollisionShape2D" parent="Arena/TopWall"]
@@ -48,9 +51,22 @@ shape = SubResource("RectangleShape2D_top")
 [node name="BallContainer" type="Node2D" parent="."]
 
 [node name="OrbContainer" type="Node2D" parent="."]
+
+[node name="ParticleContainer" type="Node2D" parent="."]
+
+[node name="Magazine" type="Node2D" parent="."]
+script = ExtResource("2")
+
+[node name="SoundManager" type="Node" parent="."]
+script = ExtResource("4")
+
 [node name="AimLine" type="Line2D" parent="."]
 width = 6.0
 default_color = Color(0.4, 0.6, 0.95, 0.35)
+
+[node name="TrajectoryPreview" type="Line2D" parent="."]
+width = 2.0
+default_color = Color(0.4, 0.6, 0.95, 0.2)
 
 [node name="HUD" type="CanvasLayer" parent="."]
 
@@ -59,13 +75,40 @@ offset_left = 15.0
 offset_top = 20.0
 offset_right = 200.0
 offset_bottom = 50.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("3")
+theme_override_font_sizes/font_size = 18
 text = "Round 1"
 
-[node name="SpeedButton" type="Button" parent="HUD"]
-offset_left = 300.0
-offset_top = 15.0
+[node name="ScoreLabel" type="Label" parent="HUD"]
+offset_left = 200.0
+offset_top = 20.0
 offset_right = 375.0
-offset_bottom = 45.0
+offset_bottom = 50.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("3")
+theme_override_font_sizes/font_size = 18
+text = "0"
+horizontal_alignment = 2
+
+[node name="HighScoreLabel" type="Label" parent="HUD"]
+offset_left = 15.0
+offset_top = 48.0
+offset_right = 375.0
+offset_bottom = 68.0
+theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
+theme_override_fonts/font = ExtResource("3")
+theme_override_font_sizes/font_size = 12
+text = "Best: 0"
+horizontal_alignment = 2
+
+[node name="SpeedButton" type="Button" parent="HUD"]
+offset_left = 15.0
+offset_top = 50.0
+offset_right = 60.0
+offset_bottom = 72.0
+theme_override_fonts/font = ExtResource("3")
+theme_override_font_sizes/font_size = 12
 text = "1x"
 
 [node name="AmmoLabel" type="Label" parent="HUD"]
@@ -73,19 +116,69 @@ offset_left = 155.0
 offset_top = 505.0
 offset_right = 240.0
 offset_bottom = 530.0
+theme_override_colors/font_color = Color(0.3, 0.5, 0.9, 1)
+theme_override_fonts/font = ExtResource("3")
+theme_override_font_sizes/font_size = 16
 text = "x1"
 
+[node name="RestartButton" type="Button" parent="HUD"]
+visible = false
+offset_left = 120.0
+offset_top = 400.0
+offset_right = 270.0
+offset_bottom = 440.0
+theme_override_fonts/font = ExtResource("3")
+theme_override_font_sizes/font_size = 14
+text = "TAP TO RESTART"
+
+[node name="GameOverLabel" type="Label" parent="HUD"]
+visible = false
+offset_left = 40.0
+offset_top = 320.0
+offset_right = 350.0
+offset_bottom = 390.0
+theme_override_colors/font_color = Color(0.85, 0.2, 0.25, 1)
+theme_override_fonts/font = ExtResource("3")
+theme_override_font_sizes/font_size = 36
+text = "GAME OVER"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="FinalScoreLabel" type="Label" parent="HUD"]
+visible = false
+offset_left = 40.0
+offset_top = 380.0
+offset_right = 350.0
+offset_bottom = 410.0
+theme_override_colors/font_color = Color(0.4, 0.4, 0.45, 1)
+theme_override_fonts/font = ExtResource("3")
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+
 [node name="PowerupBar" type="ColorRect" parent="HUD"]
-offset_left = 0.0
 offset_top = 700.0
 offset_right = 390.0
 offset_bottom = 844.0
 color = Color(0.88, 0.88, 0.9, 1)
 
-[node name="PowerupLabel" type="Label" parent="HUD/PowerupBar"]
+[node name="ExplosiveButton" type="Button" parent="HUD/PowerupBar"]
+layout_mode = 0
 offset_left = 15.0
-offset_top = 10.0
-offset_right = 375.0
-offset_bottom = 40.0
-text = "[ Power-ups ]"
+offset_top = 15.0
+offset_right = 120.0
+offset_bottom = 55.0
+theme_override_fonts/font = ExtResource("3")
+theme_override_font_sizes/font_size = 11
+text = "EXPLOSIVE"
+
+[node name="ExplosiveCooldown" type="Label" parent="HUD/PowerupBar"]
+layout_mode = 0
+offset_left = 15.0
+offset_top = 58.0
+offset_right = 120.0
+offset_bottom = 75.0
+theme_override_colors/font_color = Color(0.4, 0.8, 0.4, 1)
+theme_override_fonts/font = ExtResource("3")
+theme_override_font_sizes/font_size = 10
+text = "Ready"
 horizontal_alignment = 1
