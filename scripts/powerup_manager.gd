@@ -1,4 +1,5 @@
 extends Node
+
 enum PowerUp {
     PORTAL_SHOT,
     EXPLOSIVE_SHOT,
@@ -10,18 +11,15 @@ enum PowerUp {
 
 var unlocked_powerups: Dictionary = {}
 var cooldowns: Dictionary = {}
-
-# Cooldown durations (in rounds)
 var cooldown_durations: Dictionary = {
     PowerUp.PORTAL_SHOT: 8,
     PowerUp.EXPLOSIVE_SHOT: 4,
     PowerUp.SHUFFLE: 5,
-    PowerUp.NUKE: 999,  # once per game
+    PowerUp.NUKE: 999,
     PowerUp.BURN_SHOT: 3,
     PowerUp.REWIND: 6,
 }
 
-# Unlock thresholds (highest level completed)
 var unlock_levels: Dictionary = {
     PowerUp.EXPLOSIVE_SHOT: 5,
     PowerUp.SHUFFLE: 10,
