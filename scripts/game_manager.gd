@@ -28,6 +28,7 @@ const SAVE_PATH = "user://highscore.save"
 @onready var particle_container = $ParticleContainer
 @onready var magazine = $Magazine
 @onready var sound_manager = $SoundManager
+@onready var launcher = $Launcher
 
 # Powerup UI
 @onready var explosive_button = $HUD/PowerupBar/ExplosiveButton
@@ -47,6 +48,7 @@ var bonus_ammo: int = 0
 var pending_ammo: int = 0
 var is_aiming: bool = false
 var is_firing: bool = false
+var railgun_deaths_pending: int = 0
 var fire_direction: Vector2
 var balls_in_play: int = 0
 var preview_ball: Node2D = null
@@ -99,7 +101,7 @@ var active_powerup: int = ActivePowerup.NONE
 var explosive_cooldown: int = 0
 var explosive_cooldown_max: int = 4
 var railgun_cooldown: int = 0
-var railgun_cooldown_max: int = 8
+var railgun_cooldown_max: int = 0  # disabled for testing — railgun has no cooldown
 var burn_cooldown: int = 0
 var burn_cooldown_max: int = 5
 var nuke_charges: int = 0
@@ -132,6 +134,7 @@ func _ready():
 	arena_bottom = arena_top + max_rows * cell_height
 	launch_point = Vector2(195, arena_bottom + 20)
 	original_position = position
+	launcher.position = launch_point
 
 	speed_button.pressed.connect(_on_speed_pressed)
 	restart_button.pressed.connect(_on_restart_pressed)
@@ -237,7 +240,7 @@ func _on_restart_pressed():
 # ---- POWERUP MANAGEMENT ----
 
 func toggle_powerup(powerup: int):
-	if is_firing or not game_active:
+	if not game_active:
 		return
 	var cd = get_cooldown(powerup)
 	if cd > 0:
@@ -249,6 +252,12 @@ func toggle_powerup(powerup: int):
 		sound_manager.play_powerup()
 	update_all_powerup_ui()
 	create_preview_ball()
+	match active_powerup:
+		ActivePowerup.NONE: launcher.set_type(0)
+		ActivePowerup.EXPLOSIVE: launcher.set_type(1)
+		ActivePowerup.RAILGUN: launcher.set_type(2)
+		ActivePowerup.BURN: launcher.set_type(3)
+	update_launcher_type()
 
 func get_cooldown(powerup: int) -> int:
 	match powerup:
@@ -300,7 +309,20 @@ func update_all_powerup_ui():
 		nuke_button.modulate = Color(0.5, 0.5, 0.5)
 		nuke_label.text = "No charges"
 		nuke_label.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
+
+func update_launcher_type():
+		match active_powerup:
+			ActivePowerup.NONE:
+				launcher.set_type(0)      # DEFAULT
+			ActivePowerup.EXPLOSIVE:
+				launcher.set_type(1)  # BOMB
+			ActivePowerup.RAILGUN:
+				launcher.set_type(2)    # RAILGUN
+			ActivePowerup.BURN:
+				launcher.set_type(3)       # BURN
 func _on_nuke_pressed():
+	if launcher:
+		launcher.set_type(4)  # NUKE visual briefly
 	if nuke_charges <= 0 or is_firing or not game_active or is_sliding or is_dropping:
 		return
 	nuke_charges -= 1
@@ -392,7 +414,9 @@ func update_aim_line(target: Vector2):
 	if direction.y >= -0.1:
 		aim_line.clear_points()
 		trajectory_preview.clear_points()
+		launcher.clear_aim()
 		return
+	launcher.set_aim(atan2(direction.y, direction.x))
 	aim_line.clear_points()
 	trajectory_preview.clear_points()
 	var space_state = get_world_2d().direct_space_state
@@ -421,6 +445,7 @@ func start_firing():
 	balls_in_play = 0
 	first_ball_returned = false
 	pending_ammo = 0
+	railgun_deaths_pending = 0
 	if preview_ball:
 		preview_ball.visible = false
 	ammo_label.visible = false
@@ -440,6 +465,8 @@ func start_firing():
 			set_cooldown(ActivePowerup.BURN)
 			active_powerup = ActivePowerup.NONE
 			update_all_powerup_ui()
+			update_launcher_type()
+			launcher.clear_aim()
 		else:
 			var special_scene = null
 			match active_powerup:
@@ -449,17 +476,25 @@ func start_firing():
 			if special_scene:
 				var ball = special_scene.instantiate()
 				ball.position = launch_point
-				ball.speed = 800.0 if active_powerup != ActivePowerup.RAILGUN else 1200.0
+				ball.speed = 800.0 if active_powerup != ActivePowerup.RAILGUN else 1500.0
 				ball.ball_returned.connect(_on_ball_returned)
 				ball.ball_landed.connect(_on_ball_landed)
 				ball_container.add_child(ball)
 				ball.launch(fire_direction)
 				balls_in_play += 1
-				magazine.fire_ball()
-				balls_to_spawn -= 1
+				if active_powerup == ActivePowerup.RAILGUN:
+					# Railgun consumes all ammo - single shot only
+					for i in range(balls_to_spawn):
+						magazine.fire_ball()
+					balls_to_spawn = 0
+				else:
+					magazine.fire_ball()
+					balls_to_spawn -= 1
 				set_cooldown(active_powerup)
 				active_powerup = ActivePowerup.NONE
 				update_all_powerup_ui()
+				update_launcher_type()
+				launcher.clear_aim()
 
 	if balls_to_spawn > 0:
 		spawn_distance_accumulator = ball_spacing
@@ -602,11 +637,22 @@ func _on_ball_landed(x_pos: float):
 		first_ball_returned = true
 		next_launch_x = clamp(x_pos, arena_left + 15, arena_right - 15)
 		magazine.shift_entrance_to(next_launch_x)
+		# Animate launcher to new position in sync with magazine
+		var tween = create_tween()
+		tween.tween_property(launcher, "position:x", next_launch_x, 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 
 func _on_ball_returned():
 	balls_in_play -= 1
 	magazine.return_ball()
 	if balls_in_play <= 0 and not is_spawning:
+		if railgun_deaths_pending > 0:
+			pass  # Wait for railgun deaths to finish
+		else:
+			end_round()
+
+func on_railgun_death_finished():
+	railgun_deaths_pending -= 1
+	if railgun_deaths_pending <= 0 and balls_in_play <= 0 and not is_spawning:
 		end_round()
 
 func end_round():
@@ -637,6 +683,11 @@ func end_round():
 	# Burn round modifier only applies to the current round's launched balls
 	burn_round_active = false
 
+	# Clear temporary railgun hit metadata so bricks can be targeted in subsequent rounds
+	for brick in brick_container.get_children():
+		if brick.has_meta("railgun_hit"):
+			brick.remove_meta("railgun_hit")
+
 	# Regenerate boss shields
 	for brick in brick_container.get_children():
 		if brick.has_method("regenerate_shield"):
@@ -654,6 +705,7 @@ func end_round():
 	create_preview_ball()
 	if preview_ball:
 		preview_ball.visible = false
+	update_launcher_type()
 	spawn_round_content()
 	start_slide_existing()
 
@@ -854,6 +906,11 @@ func after_drop_complete():
 	if preview_ball:
 		preview_ball.position = launch_point
 		preview_ball.visible = true
+	match active_powerup:
+		ActivePowerup.NONE: launcher.set_type(0)
+		ActivePowerup.EXPLOSIVE: launcher.set_type(1)
+		ActivePowerup.RAILGUN: launcher.set_type(2)
+		ActivePowerup.BURN: launcher.set_type(3)
 
 func spawn_dust(pos: Vector2):
 	var dust = Node2D.new()
@@ -1039,28 +1096,114 @@ func load_high_score():
 			high_score = file.get_var()
 			file.close()
 
-func spawn_brick_particles(pos: Vector2, color: Color):
+func spawn_brick_particles_directional(pos: Vector2, color: Color, hit_dir: Vector2):
 	add_shake(3.0)
 	sound_manager.play_destroy()
 	var particles = Node2D.new()
 	particles.position = pos
 	particle_container.add_child(particles)
-	for i in range(8):
+
+	for i in range(10):
 		var p = ColorRect.new()
-		var s = randf_range(3, 7)
+		var s = randf_range(2, 7)
 		p.size = Vector2(s, s)
 		p.position = Vector2(-s/2, -s/2)
-		p.color = color
+		p.color = color.lightened(randf_range(-0.1, 0.15))
 		particles.add_child(p)
-		var angle = (TAU / 8.0) * i + randf_range(-0.3, 0.3)
-		var dist_val = randf_range(20, 50)
-		var target_pos = Vector2(cos(angle) * dist_val, sin(angle) * dist_val)
+
+		# Directional: particles fly mostly in the hit direction with spread
+		var base_angle = hit_dir.angle()
+		var spread = randf_range(-0.8, 0.8)
+		var angle = base_angle + spread
+		var dist = randf_range(15, 55)
+		var target_pos = Vector2(cos(angle) * dist, sin(angle) * dist)
+
 		var tween = p.create_tween()
 		tween.set_parallel(true)
-		tween.tween_property(p, "position", target_pos, 0.3).set_ease(Tween.EASE_OUT)
-		tween.tween_property(p, "modulate:a", 0.0, 0.3)
+		tween.tween_property(p, "position", target_pos, 0.35).set_ease(Tween.EASE_OUT)
+		tween.tween_property(p, "modulate:a", 0.0, 0.35)
+		# Slight rotation for debris feel
+		tween.tween_property(p, "rotation", randf_range(-2, 2), 0.35)
 		tween.chain().tween_callback(p.queue_free)
+
 	get_tree().create_timer(0.4).timeout.connect(func():
 		if is_instance_valid(particles):
 			particles.queue_free()
 	)
+
+func spawn_brick_particles(pos: Vector2, color: Color):
+	spawn_brick_particles_directional(pos, color, Vector2.DOWN)
+
+# Combo tracking
+var combo_count: int = 0
+var combo_timer: float = 0.0
+var combo_timeout: float = 0.5  # seconds between kills to maintain combo
+
+func _process(delta):
+	# Combo timer decay
+	if combo_timer > 0:
+		combo_timer -= delta
+		if combo_timer <= 0:
+			combo_count = 0
+
+func on_brick_destroyed():
+	combo_count += 1
+	combo_timer = combo_timeout
+
+	if combo_count >= 3:
+		# Screen flash
+		spawn_screen_flash()
+		# Combo text
+		spawn_combo_text(combo_count)
+
+func spawn_screen_flash():
+	var flash = ColorRect.new()
+	flash.color = Color(1, 1, 1, 0.15)
+	flash.anchors_preset = 15
+	flash.anchor_right = 1.0
+	flash.anchor_bottom = 1.0
+	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$HUD.add_child(flash)
+	var tween = flash.create_tween()
+	tween.tween_property(flash, "color:a", 0.0, 0.15)
+	tween.tween_callback(flash.queue_free)
+
+func spawn_combo_text(combo: int):
+	var label = Label.new()
+	if combo >= 10:
+		label.text = "ULTRA x%d!" % combo
+	elif combo >= 7:
+		label.text = "MEGA x%d!" % combo
+	elif combo >= 5:
+		label.text = "COMBO x%d!" % combo
+	else:
+		label.text = "x%d" % combo
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.position = Vector2(120, 250)
+
+	var size = min(18 + combo * 3, 42)
+	label.add_theme_font_size_override("font_size", size)
+	# Color escalates with combo
+	var col: Color
+	if combo >= 10:
+		col = Color(1.0, 0.2, 0.3)
+	elif combo >= 7:
+		col = Color(1.0, 0.5, 0.15)
+	elif combo >= 5:
+		col = Color(0.95, 0.8, 0.2)
+	else:
+		col = Color(1, 1, 1)
+	label.add_theme_color_override("font_color", col)
+	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
+	label.add_theme_constant_override("shadow_offset_x", 2)
+	label.add_theme_constant_override("shadow_offset_y", 2)
+	add_child(label)
+
+	var tween = label.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 30, 0.8).set_ease(Tween.EASE_OUT)
+	tween.tween_property(label, "modulate:a", 0.0, 0.8).set_ease(Tween.EASE_IN)
+	if combo >= 5:
+		label.scale = Vector2(1.4, 1.4)
+		tween.tween_property(label, "scale", Vector2(1.0, 1.0), 0.2).set_ease(Tween.EASE_OUT)
+	tween.chain().tween_callback(label.queue_free)

@@ -59,7 +59,7 @@ func update_size():
     shield_bar.offset_right = half_w
     shield_bar.offset_bottom = -half_h - 1
 
-func take_damage(amount: int):
+func take_damage(amount: int, _hit_dir: Vector2 = Vector2.DOWN):
     if has_shield and shield_hp > 0:
         var absorbed = min(shield_hp, amount)
         shield_hp -= absorbed

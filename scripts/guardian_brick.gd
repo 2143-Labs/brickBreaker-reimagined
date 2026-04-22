@@ -11,7 +11,7 @@ var shield_max: int = 150
 func _ready():
     update_display()
 
-func take_damage(amount: int):
+func take_damage(amount: int, _hit_dir: Vector2 = Vector2.DOWN):
     # Shield absorbs first
     if shield_hp > 0:
         var absorbed = min(shield_hp, amount)

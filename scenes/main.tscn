@@ -1,9 +1,10 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/game_manager.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/magazine.gd" id="2"]
 [ext_resource type="FontFile" path="res://assets/fonts/Inter.ttf" id="3"]
 [ext_resource type="Script" path="res://scripts/sound_manager.gd" id="4"]
+[ext_resource type="Script" path="res://scripts/launcher.gd" id="5"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_left"]
 size = Vector2(10, 600)
@@ -60,6 +61,9 @@ script = ExtResource("2")
 
 [node name="SoundManager" type="Node" parent="."]
 script = ExtResource("4")
+
+[node name="Launcher" type="Node2D" parent="."]
+script = ExtResource("5")
 
 [node name="AimLine" type="Line2D" parent="."]
 width = 6.0
