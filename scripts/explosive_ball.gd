@@ -10,7 +10,7 @@ var damage_multiplier: float = 1.0
 var is_active: bool = true
 var launched: bool = false
 
-var explosion_radius: float = 80.0
+var explosion_radius: float = 110.0
 
 var pulse_time: float = 0.0
 

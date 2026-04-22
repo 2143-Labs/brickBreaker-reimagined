@@ -1,0 +1,59 @@
+extends CharacterBody2D
+
+signal ball_returned
+signal ball_landed(x_pos: float)
+
+var direction: Vector2 = Vector2.ZERO
+var speed: float = 800.0
+var is_active: bool = true
+var launched: bool = false
+var burn_damage: int = 2
+var burn_ticks: int = 3
+var pulse_time: float = 0.0
+
+func _ready():
+    add_to_group("balls")
+    queue_redraw()
+
+func _draw():
+    var pulse = 0.5 + 0.5 * sin(pulse_time * 6.0)
+    draw_circle(Vector2.ZERO, 10 + pulse * 3, Color(0.9, 0.4, 0.1, 0.15))
+    draw_circle(Vector2.ZERO, 8, Color(0.95, 0.5, 0.15))
+    draw_circle(Vector2.ZERO, 5, Color(1.0, 0.7, 0.2))
+    # Small flame particles
+    var flame_y = -6 - pulse * 3
+    draw_circle(Vector2(randf_range(-3, 3), flame_y), 3, Color(1.0, 0.6, 0.1, 0.5 + pulse * 0.3))
+func _physics_process(delta):
+    if not launched or not is_active:
+        return
+
+    pulse_time += delta
+    queue_redraw()
+
+    velocity = direction * speed
+    var collision = move_and_collide(velocity * delta)
+
+    if collision:
+        direction = direction.bounce(collision.get_normal())
+        var collider = collision.get_collider()
+        if collider.has_method("take_damage"):
+            collider.take_damage(1)
+            # Apply burn DOT
+            if collider.has_method("apply_burn"):
+                collider.apply_burn(burn_damage, burn_ticks)
+                # Visual: tint brick orange
+                if collider.has_node("Sprite"):
+                    var sprite = collider.get_node("Sprite")
+                    var tween = collider.create_tween()
+                    tween.tween_property(sprite, "modulate", Color(1.3, 0.8, 0.5), 0.1)
+                    tween.tween_property(sprite, "modulate", Color(1, 1, 1), 0.2)
+
+    if position.y > 540:
+        is_active = false
+        ball_landed.emit(position.x)
+        ball_returned.emit()
+        queue_free()
+
+func launch(dir: Vector2):
+    direction = dir
+    launched = true

@@ -7,6 +7,7 @@ var balls_in_tube: int = 0
 var tube_color = Color(0.72, 0.72, 0.75, 1.0)
 var tube_inner_color = Color(0.82, 0.82, 0.85, 1.0)
 var ball_color = Color(0.3, 0.55, 0.95)
+var modifier_tint = Color(1, 1, 1, 0)  # no tint by default
 var tube_width: float = 22.0
 var ball_spacing_in_tube: float = 15.0
 
@@ -206,4 +207,6 @@ func _draw():
 					break
 			if not is_plop:
 				draw_circle(pos, 7, ball_color)
+				if modifier_tint.a > 0:
+					draw_circle(pos, 7, modifier_tint)
 				draw_circle(pos + Vector2(-2, -2), 2.5, Color(0.5, 0.7, 1.0, 0.3))

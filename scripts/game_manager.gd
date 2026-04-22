@@ -4,6 +4,12 @@ const BRICK_SCENE = preload("res://scenes/brick.tscn")
 const BALL_SCENE = preload("res://scenes/ball.tscn")
 const AMMO_ORB_SCENE = preload("res://scenes/ammo_orb.tscn")
 const EXPLOSIVE_BALL_SCENE = preload("res://scenes/explosive_ball.tscn")
+const RAILGUN_BALL_SCENE = preload("res://scenes/railgun_ball.tscn")
+const BURN_BALL_SCENE = preload("res://scenes/burn_ball.tscn")
+const BOSS_BRICK_SCENE = preload("res://scenes/boss_brick.tscn")
+const GUARDIAN_BRICK_SCENE = preload("res://scenes/guardian_brick.tscn")
+const RAINBOW_BRICK_SCENE = preload("res://scenes/rainbow_brick.tscn")
+const PICKUP_SCENE = preload("res://scenes/pickup.tscn")
 const SAVE_PATH = "user://highscore.save"
 
 @onready var brick_container = $BrickContainer
@@ -22,8 +28,16 @@ const SAVE_PATH = "user://highscore.save"
 @onready var particle_container = $ParticleContainer
 @onready var magazine = $Magazine
 @onready var sound_manager = $SoundManager
+
+# Powerup UI
 @onready var explosive_button = $HUD/PowerupBar/ExplosiveButton
 @onready var explosive_cooldown_label = $HUD/PowerupBar/ExplosiveCooldown
+@onready var railgun_button = $HUD/PowerupBar/RailgunButton
+@onready var railgun_cooldown_label = $HUD/PowerupBar/RailgunCooldown
+@onready var burn_button = $HUD/PowerupBar/BurnButton
+@onready var burn_cooldown_label = $HUD/PowerupBar/BurnCooldown
+@onready var nuke_button = $HUD/PowerupBar/NukeButton
+@onready var nuke_label = $HUD/PowerupBar/NukeLabel
 
 var current_round: int = 1
 var score: int = 0
@@ -51,7 +65,6 @@ var current_speed_idx: int = 0
 var arena_left: float = 13.0
 var arena_right: float = 377.0
 var arena_top: float = 80.0
-
 var grid_cols: int = 7
 var cell_width: float = 52.0
 var cell_height: float = 38.0
@@ -65,7 +78,6 @@ var launch_point: Vector2
 var is_sliding: bool = false
 var slide_progress: float = 0.0
 var slide_duration: float = 0.2
-
 var is_dropping: bool = false
 var drop_progress: float = 0.0
 var drop_duration: float = 0.25
@@ -73,15 +85,46 @@ var dropping_bricks: Array = []
 var dropping_orbs: Array = []
 
 var death_row: int = 9
-
 var shake_amount: float = 0.0
 var shake_decay: float = 8.0
 var original_position: Vector2 = Vector2.ZERO
 
-# Explosive powerup
-var explosive_active: bool = false
+var damage_multiplier: float = 1.0
+var ammo_multiplier: float = 1.0
+var next_round_damage_mult: float = 1.0
+var next_round_ammo_mult: float = 1.0
+# Powerup states
+enum ActivePowerup { NONE, EXPLOSIVE, RAILGUN, BURN }
+var active_powerup: int = ActivePowerup.NONE
 var explosive_cooldown: int = 0
 var explosive_cooldown_max: int = 4
+var railgun_cooldown: int = 0
+var railgun_cooldown_max: int = 8
+var burn_cooldown: int = 0
+var burn_cooldown_max: int = 5
+var nuke_charges: int = 0
+var burn_round_active: bool = false
+
+# Boss system
+var boss_schedule = {
+	25: {"w": 2, "h": 2, "shield": 0},
+	50: {"w": 2, "h": 3, "shield": 0},
+	100: {"w": 3, "h": 3, "shield": 10},
+	150: {"w": 3, "h": 4, "shield": 25},
+	200: {"w": 4, "h": 4, "shield": 50},
+}
+var final_boss_start: int = 300
+var final_boss_interval: int = 100
+var bosses_killed: Array = []
+var active_elites: int = 0
+var max_elites: int = 2
+var elite_chance: float = 0.12
+
+# Rainbow brick
+var rainbow_on_board: bool = false
+var rainbow_spawn_chance: float = 0.05
+var rounds_since_rainbow: int = 0
+
 func _ready():
 	add_to_group("game_manager")
 	grid_start_x = arena_left + cell_width / 2.0
@@ -92,7 +135,10 @@ func _ready():
 
 	speed_button.pressed.connect(_on_speed_pressed)
 	restart_button.pressed.connect(_on_restart_pressed)
-	explosive_button.pressed.connect(_on_explosive_pressed)
+	explosive_button.pressed.connect(func(): toggle_powerup(ActivePowerup.EXPLOSIVE))
+	railgun_button.pressed.connect(func(): toggle_powerup(ActivePowerup.RAILGUN))
+	burn_button.pressed.connect(func(): toggle_powerup(ActivePowerup.BURN))
+	nuke_button.pressed.connect(_on_nuke_pressed)
 
 	load_high_score()
 
@@ -102,8 +148,8 @@ func _ready():
 	magazine.entrance_x = launch_point.x
 	magazine.set_ammo(ammo + bonus_ammo)
 
-	spawn_round_bricks()
-	spawn_ammo_orbs()
+	spawn_round_bricks_at_row0()
+	spawn_ammo_orbs_at_row0()
 
 	is_sliding = true
 	slide_progress = 0.0
@@ -118,10 +164,9 @@ func _ready():
 
 	update_hud()
 	update_ammo_label_position()
-	update_explosive_ui()
+	update_all_powerup_ui()
 	create_preview_ball()
 	queue_redraw()
-
 func _draw():
 	var border_color = Color(1, 1, 1, 0.9)
 	var thickness = 2.0
@@ -133,14 +178,10 @@ func _draw():
 func _physics_process(delta):
 	if shake_amount > 0.1:
 		shake_amount = lerp(shake_amount, 0.0, shake_decay * delta)
-		position = original_position + Vector2(
-			randf_range(-shake_amount, shake_amount),
-			randf_range(-shake_amount, shake_amount)
-		)
+		position = original_position + Vector2(randf_range(-shake_amount, shake_amount), randf_range(-shake_amount, shake_amount))
 	elif shake_amount > 0:
 		shake_amount = 0.0
 		position = original_position
-
 	if is_spawning and balls_to_spawn > 0:
 		spawn_distance_accumulator += 800.0 * delta
 		while spawn_distance_accumulator >= ball_spacing and balls_to_spawn > 0:
@@ -186,37 +227,106 @@ func add_shake(amount: float):
 
 func _on_speed_pressed():
 	current_speed_idx = (current_speed_idx + 1) % speed_levels.size()
-	var spd = speed_levels[current_speed_idx]
-	Engine.time_scale = spd
-	speed_button.text = "%dx" % int(spd)
+	Engine.time_scale = speed_levels[current_speed_idx]
+	speed_button.text = "%dx" % int(speed_levels[current_speed_idx])
 
 func _on_restart_pressed():
 	Engine.time_scale = 1.0
 	get_tree().reload_current_scene()
 
-func _on_explosive_pressed():
-	if explosive_cooldown > 0 or is_firing or not game_active:
+# ---- POWERUP MANAGEMENT ----
+
+func toggle_powerup(powerup: int):
+	if is_firing or not game_active:
 		return
-	explosive_active = !explosive_active
-	update_explosive_ui()
-	if explosive_active:
-		sound_manager.play_powerup()
-func update_explosive_ui():
-	if explosive_cooldown > 0:
-		explosive_button.disabled = true
-		explosive_button.modulate = Color(0.5, 0.5, 0.5)
-		explosive_cooldown_label.text = "%d rounds" % explosive_cooldown
-		explosive_cooldown_label.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
-	elif explosive_active:
-		explosive_button.disabled = false
-		explosive_button.modulate = Color(1.0, 0.7, 0.3)
-		explosive_cooldown_label.text = "ARMED"
-		explosive_cooldown_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.15))
+	var cd = get_cooldown(powerup)
+	if cd > 0:
+		return
+	if active_powerup == powerup:
+		active_powerup = ActivePowerup.NONE
 	else:
-		explosive_button.disabled = false
-		explosive_button.modulate = Color(1, 1, 1)
-		explosive_cooldown_label.text = "Ready"
-		explosive_cooldown_label.add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
+		active_powerup = powerup
+		sound_manager.play_powerup()
+	update_all_powerup_ui()
+	create_preview_ball()
+
+func get_cooldown(powerup: int) -> int:
+	match powerup:
+		ActivePowerup.EXPLOSIVE: return explosive_cooldown
+		ActivePowerup.RAILGUN: return railgun_cooldown
+		ActivePowerup.BURN: return burn_cooldown
+	return 0
+func set_cooldown(powerup: int):
+	match powerup:
+		ActivePowerup.EXPLOSIVE: explosive_cooldown = explosive_cooldown_max
+		ActivePowerup.RAILGUN: railgun_cooldown = railgun_cooldown_max
+		ActivePowerup.BURN: burn_cooldown = burn_cooldown_max
+
+func tick_cooldowns():
+	if explosive_cooldown > 0: explosive_cooldown -= 1
+	if railgun_cooldown > 0: railgun_cooldown -= 1
+	if burn_cooldown > 0: burn_cooldown -= 1
+
+func update_powerup_button(button: Button, label: Label, cd: int, is_active: bool, cd_max: int):
+	if cd > 0:
+		button.disabled = true
+		button.modulate = Color(0.5, 0.5, 0.5)
+		label.text = "%d rounds" % cd
+		label.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
+	elif is_active:
+		button.disabled = false
+		button.modulate = Color(1.0, 0.7, 0.3)
+		label.text = "ARMED"
+		label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.15))
+	else:
+		button.disabled = false
+		button.modulate = Color(1, 1, 1)
+		label.text = "Ready"
+		label.add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
+
+func update_all_powerup_ui():
+	update_powerup_button(explosive_button, explosive_cooldown_label, explosive_cooldown, active_powerup == ActivePowerup.EXPLOSIVE, explosive_cooldown_max)
+	update_powerup_button(railgun_button, railgun_cooldown_label, railgun_cooldown, active_powerup == ActivePowerup.RAILGUN, railgun_cooldown_max)
+	update_powerup_button(burn_button, burn_cooldown_label, burn_cooldown, active_powerup == ActivePowerup.BURN, burn_cooldown_max)
+	# Nuke
+	nuke_button.text = "NUKE (%d)" % nuke_charges
+	if nuke_charges > 0:
+		nuke_button.disabled = false
+		nuke_button.modulate = Color(1, 1, 1)
+		nuke_label.text = "%d charges" % nuke_charges
+		nuke_label.add_theme_color_override("font_color", Color(0.9, 0.8, 0.2))
+	else:
+		nuke_button.disabled = true
+		nuke_button.modulate = Color(0.5, 0.5, 0.5)
+		nuke_label.text = "No charges"
+		nuke_label.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
+func _on_nuke_pressed():
+	if nuke_charges <= 0 or is_firing or not game_active or is_sliding or is_dropping:
+		return
+	nuke_charges -= 1
+	do_nuke()
+	update_all_powerup_ui()
+
+func do_nuke():
+	sound_manager.play_explode()
+	add_shake(12.0)
+	spawn_modifier_popup("☢ NUKE ☢", Color(1.0, 0.9, 0.2))
+
+	# Destroy all bricks with big VFX
+	var bricks = brick_container.get_children().duplicate()
+	for brick in bricks:
+		if is_instance_valid(brick):
+			if brick.has_node("Sprite"):
+				spawn_brick_particles(brick.global_position, brick.get_node("Sprite").color)
+			# Score for each
+			if brick.has_method("get_brick_value"):
+				add_score(brick.get_brick_value())
+			brick.queue_free()
+
+	# Big center explosion VFX
+	spawn_explosion_vfx(Vector2(195, arena_top + (arena_bottom - arena_top) / 2), 200)
+
+# ---- PREVIEW & AIMING ----
 
 func create_preview_ball():
 	if preview_ball:
@@ -224,14 +334,27 @@ func create_preview_ball():
 	preview_ball = Node2D.new()
 	preview_ball.position = launch_point
 	add_child(preview_ball)
-	var color = Color(1.0, 0.5, 0.15, 0.9) if explosive_active else Color(0.3, 0.55, 0.95, 0.9)
-	var c = color  # capture for lambda
+	var pw = active_powerup
+	var is_pow = damage_multiplier > 1.0
 	preview_ball.draw.connect(func():
-		if explosive_active:
-			preview_ball.draw_circle(Vector2.ZERO, 10, Color(1.0, 0.4, 0.1, 0.3))
-			preview_ball.draw_circle(Vector2.ZERO, 8, Color(1.0, 0.5, 0.15, 0.9))
-		else:
-			preview_ball.draw_circle(Vector2.ZERO, 8, Color(0.3, 0.55, 0.95, 0.9))
+		match pw:
+			ActivePowerup.EXPLOSIVE:
+				preview_ball.draw_circle(Vector2.ZERO, 10, Color(1.0, 0.4, 0.1, 0.3))
+				preview_ball.draw_circle(Vector2.ZERO, 8, Color(1.0, 0.5, 0.15, 0.9))
+			ActivePowerup.RAILGUN:
+				preview_ball.draw_circle(Vector2.ZERO, 10, Color(0.2, 0.8, 1.0, 0.2))
+				preview_ball.draw_circle(Vector2.ZERO, 6, Color(0.3, 0.9, 1.0, 0.8))
+				preview_ball.draw_circle(Vector2.ZERO, 3, Color(1, 1, 1, 0.9))
+			ActivePowerup.BURN:
+				preview_ball.draw_circle(Vector2.ZERO, 10, Color(0.95, 0.4, 0.1, 0.2))
+				preview_ball.draw_circle(Vector2.ZERO, 8, Color(0.95, 0.5, 0.15))
+				preview_ball.draw_circle(Vector2.ZERO, 5, Color(1.0, 0.7, 0.2))
+			_:
+				if is_pow:
+					preview_ball.draw_circle(Vector2.ZERO, 10, Color(0.9, 0.2, 0.15, 0.25))
+					preview_ball.draw_circle(Vector2.ZERO, 8, Color(0.85, 0.3, 0.25))
+				else:
+					preview_ball.draw_circle(Vector2.ZERO, 8, Color(0.3, 0.55, 0.95, 0.9))
 	)
 	preview_ball.queue_redraw()
 
@@ -247,8 +370,10 @@ func _input(event):
 		return
 	if event is InputEventMouseButton or event is InputEventScreenTouch:
 		var pressed = event.pressed
+		var pos = event.position if event is InputEventMouseButton else event.position
 		if pressed:
-			is_aiming = true
+			if pos.y > 70 and pos.y < 700 and pos.x > arena_left and pos.x < arena_right:
+				is_aiming = true
 		elif is_aiming:
 			is_aiming = false
 			var aim_pos = event.position if event is InputEventMouseButton else event.position
@@ -257,7 +382,6 @@ func _input(event):
 				start_firing()
 			aim_line.clear_points()
 			trajectory_preview.clear_points()
-
 	if event is InputEventMouseMotion or event is InputEventScreenDrag:
 		if is_aiming:
 			var aim_pos = event.position if event is InputEventMouseMotion else event.position
@@ -269,34 +393,28 @@ func update_aim_line(target: Vector2):
 		aim_line.clear_points()
 		trajectory_preview.clear_points()
 		return
-
-	# Raycast to find first bounce
 	aim_line.clear_points()
 	trajectory_preview.clear_points()
-
 	var space_state = get_world_2d().direct_space_state
-	var query = PhysicsRayQueryParameters2D.create(
-		launch_point + direction * 2,
-		launch_point + direction * 800
-	)
+	var query = PhysicsRayQueryParameters2D.create(launch_point + direction * 2, launch_point + direction * 800)
 	query.collision_mask = 1
 	var result = space_state.intersect_ray(query)
-
 	if result:
-		# Main line: launch to first hit
 		aim_line.add_point(launch_point)
 		aim_line.add_point(result.position)
-
-		# Bounce preview: thinner, from hit point onward
-		var bounce_dir = direction.bounce(result.normal)
-		trajectory_preview.add_point(result.position)
-		trajectory_preview.add_point(result.position + bounce_dir * 150)
+		if active_powerup != ActivePowerup.RAILGUN:
+			var bounce_dir = direction.bounce(result.normal)
+			trajectory_preview.add_point(result.position)
+			trajectory_preview.add_point(result.position + bounce_dir * 150)
+		else:
+			# Railgun: show line continuing straight through
+			trajectory_preview.add_point(result.position)
+			trajectory_preview.add_point(result.position + direction * 300)
 	else:
-		# No hit found, just draw straight
 		aim_line.add_point(launch_point)
 		aim_line.add_point(launch_point + direction * 800)
 
-
+# ---- FIRING ----
 
 func start_firing():
 	is_firing = true
@@ -309,23 +427,39 @@ func start_firing():
 	aim_line.clear_points()
 	trajectory_preview.clear_points()
 
-	balls_to_spawn = ammo + bonus_ammo
+	var total = ammo + bonus_ammo
+	if ammo_multiplier > 1.0:
+		total = int(total * ammo_multiplier)
+	balls_to_spawn = total
 
-	# If explosive is armed, first ball is explosive
-	if explosive_active:
-		var ball = EXPLOSIVE_BALL_SCENE.instantiate()
-		ball.position = launch_point
-		ball.speed = 800.0
-		ball.ball_returned.connect(_on_ball_returned)
-		ball.ball_landed.connect(_on_ball_landed)
-		ball_container.add_child(ball)
-		ball.launch(fire_direction)
-		balls_in_play += 1
-		magazine.fire_ball()
-		balls_to_spawn -= 1
-		explosive_active = false
-		explosive_cooldown = explosive_cooldown_max
-		update_explosive_ui()
+	# Fire special ball first if powerup armed
+	if active_powerup != ActivePowerup.NONE:
+		# BURN is a round modifier: enable burn for the whole round and don't spawn a special ball
+		if active_powerup == ActivePowerup.BURN:
+			burn_round_active = true
+			set_cooldown(ActivePowerup.BURN)
+			active_powerup = ActivePowerup.NONE
+			update_all_powerup_ui()
+		else:
+			var special_scene = null
+			match active_powerup:
+				ActivePowerup.EXPLOSIVE: special_scene = EXPLOSIVE_BALL_SCENE
+				ActivePowerup.RAILGUN: special_scene = RAILGUN_BALL_SCENE
+
+			if special_scene:
+				var ball = special_scene.instantiate()
+				ball.position = launch_point
+				ball.speed = 800.0 if active_powerup != ActivePowerup.RAILGUN else 1200.0
+				ball.ball_returned.connect(_on_ball_returned)
+				ball.ball_landed.connect(_on_ball_landed)
+				ball_container.add_child(ball)
+				ball.launch(fire_direction)
+				balls_in_play += 1
+				magazine.fire_ball()
+				balls_to_spawn -= 1
+				set_cooldown(active_powerup)
+				active_powerup = ActivePowerup.NONE
+				update_all_powerup_ui()
 
 	if balls_to_spawn > 0:
 		spawn_distance_accumulator = ball_spacing
@@ -337,6 +471,10 @@ func do_launch_ball():
 	var ball = BALL_SCENE.instantiate()
 	ball.position = launch_point
 	ball.speed = 800.0
+	ball.damage_multiplier = damage_multiplier
+	ball.is_powered = (damage_multiplier > 1.0)
+	# If a burn round is active, this ball will apply burn stacks on hit
+	ball.applies_burn = burn_round_active
 	ball.ball_returned.connect(_on_ball_returned)
 	ball.ball_landed.connect(_on_ball_landed)
 	ball_container.add_child(ball)
@@ -344,51 +482,36 @@ func do_launch_ball():
 	balls_in_play += 1
 	magazine.fire_ball()
 
+# ---- EXPLOSION ----
+
 func do_explosion(center: Vector2, radius: float):
 	sound_manager.play_explode()
 	add_shake(8.0)
 	spawn_explosion_vfx(center, radius)
-
 	var ball_count = ammo + bonus_ammo
 	var inner_radius = radius * 0.4
-	var outer_radius = radius
-
-	# Damage scaling: min 10, after round 10 scales with ball count
-	var direct_damage = max(10, int(5.0 * ball_count)) if current_round > 10 else 10
-	var inner_damage = max(5, int(2.5 * ball_count)) if current_round > 10 else 5
-	var outer_damage = max(2, int(0.5 * ball_count)) if current_round > 10 else 2
+	var direct_damage = max(20, int(8.0 * ball_count)) if current_round > 10 else 20
+	var inner_damage = max(10, int(4.0 * ball_count)) if current_round > 10 else 10
+	var outer_damage = max(5, int(1.5 * ball_count)) if current_round > 10 else 5
 	for brick in brick_container.get_children():
 		var dist = center.distance_to(brick.position)
 		if dist < 1.0:
-			# Direct hit
 			brick.take_damage(direct_damage)
-			brick.apply_explosion_crack(0)
+			if brick.has_method("apply_explosion_crack"):
+				brick.apply_explosion_crack(0)
 		elif dist <= inner_radius:
-			# Inner ring
 			brick.take_damage(inner_damage)
-			brick.apply_explosion_crack(1)
-		elif dist <= outer_radius:
-			# Outer ring
+			if brick.has_method("apply_explosion_crack"):
+				brick.apply_explosion_crack(1)
+		elif dist <= radius:
 			brick.take_damage(outer_damage)
-			brick.apply_explosion_crack(2)
+			if brick.has_method("apply_explosion_crack"):
+				brick.apply_explosion_crack(2)
 
 func spawn_explosion_vfx(center: Vector2, radius: float):
 	var explosion = Node2D.new()
 	explosion.position = center
 	particle_container.add_child(explosion)
-
-	# Expanding ring
-	var ring = Node2D.new()
-	explosion.add_child(ring)
-	ring.draw.connect(func():
-		ring.draw_arc(Vector2.ZERO, ring.scale.x * radius * 0.5, 0, TAU, 32, Color(1.0, 0.5, 0.1, ring.modulate.a), 3.0)
-	)
-	ring.queue_redraw()
-	var ring_tween = ring.create_tween()
-	ring_tween.set_parallel(true)
-	ring_tween.tween_property(ring, "scale", Vector2(2.0, 2.0), 0.3).from(Vector2(0.2, 0.2))
-	ring_tween.tween_property(ring, "modulate:a", 0.0, 0.3)
-	# Burst particles
 	for i in range(16):
 		var p = ColorRect.new()
 		var s = randf_range(3, 8)
@@ -396,27 +519,90 @@ func spawn_explosion_vfx(center: Vector2, radius: float):
 		p.position = Vector2(-s/2, -s/2)
 		p.color = [Color(1.0, 0.5, 0.1), Color(1.0, 0.8, 0.2), Color(1.0, 0.3, 0.1)][randi() % 3]
 		explosion.add_child(p)
-
 		var angle = (TAU / 16.0) * i + randf_range(-0.2, 0.2)
 		var dist = randf_range(30, radius)
 		var target_pos = Vector2(cos(angle) * dist, sin(angle) * dist)
-
 		var tween = p.create_tween()
 		tween.set_parallel(true)
 		tween.tween_property(p, "position", target_pos, 0.35).set_ease(Tween.EASE_OUT)
 		tween.tween_property(p, "modulate:a", 0.0, 0.35)
 		tween.chain().tween_callback(p.queue_free)
-
 	get_tree().create_timer(0.5).timeout.connect(func():
 		if is_instance_valid(explosion):
 			explosion.queue_free()
 	)
+func spawn_railgun_trail(pos: Vector2):
+	var trail = Node2D.new()
+	trail.position = pos
+	particle_container.add_child(trail)
+	# Electric spark effect
+	for i in range(4):
+		var p = ColorRect.new()
+		p.size = Vector2(3, 3)
+		p.position = Vector2(-1.5, -1.5)
+		p.color = Color(0.3, 0.9, 1.0)
+		trail.add_child(p)
+		var target_pos = Vector2(randf_range(-15, 15), randf_range(-15, 15))
+		var tween = p.create_tween()
+		tween.set_parallel(true)
+		tween.tween_property(p, "position", target_pos, 0.2)
+		tween.tween_property(p, "modulate:a", 0.0, 0.2)
+		tween.chain().tween_callback(p.queue_free)
+	get_tree().create_timer(0.3).timeout.connect(func():
+		if is_instance_valid(trail):
+			trail.queue_free()
+	)
+
+# ---- PICKUPS & RAINBOW ----
+
+func collect_pickup(pickup_type: int):
+	if pickup_type == 0:
+		next_round_ammo_mult = 2.0
+		spawn_modifier_popup("2x AMMO NEXT", Color(0.9, 0.65, 0.15))
+	elif pickup_type == 1:
+		next_round_damage_mult = 2.0
+		spawn_modifier_popup("2x DMG NEXT", Color(0.85, 0.25, 0.2))
+	elif pickup_type == 2:
+		nuke_charges += 1
+		spawn_modifier_popup("☢ NUKE CHARGE!", Color(1.0, 0.9, 0.2))
+		update_all_powerup_ui()
+
+func on_rainbow_brick_destroyed(pos: Vector2):
+	rainbow_on_board = false
+	rounds_since_rainbow = 0
+	rainbow_spawn_chance = 0.05
+	# Drop: 40% 2x ammo, 40% 2x damage, 20% nuke charge
+	var roll = randf()
+	var pickup = PICKUP_SCENE.instantiate()
+	pickup.position = pos
+	if roll < 0.4:
+		pickup.pickup_type = 0  # 2x ammo
+	elif roll < 0.8:
+		pickup.pickup_type = 1  # 2x damage
+	else:
+		pickup.pickup_type = 2  # nuke charge
+	orb_container.add_child(pickup)
+
+func on_boss_killed(boss):
+	if boss.is_final_boss:
+		spawn_modifier_popup("FINAL BOSS DEFEATED!", Color(1.0, 0.85, 0.2))
+	elif boss.is_elite:
+		active_elites -= 1
+	# Track killed boss rounds for elite system
+	for round_num in boss_schedule.keys():
+		var info = boss_schedule[round_num]
+		if boss.grid_width == info["w"] and boss.grid_height == info["h"]:
+			if round_num not in bosses_killed:
+				bosses_killed.append(round_num)
+
+# ---- ROUND MANAGEMENT ----
 
 func _on_ball_landed(x_pos: float):
 	if not first_ball_returned:
 		first_ball_returned = true
 		next_launch_x = clamp(x_pos, arena_left + 15, arena_right - 15)
 		magazine.shift_entrance_to(next_launch_x)
+
 func _on_ball_returned():
 	balls_in_play -= 1
 	magazine.return_ball()
@@ -428,10 +614,36 @@ func end_round():
 	current_round += 1
 	launch_point.x = next_launch_x
 
-	# Tick cooldowns
-	if explosive_cooldown > 0:
-		explosive_cooldown -= 1
-	update_explosive_ui()
+	damage_multiplier = next_round_damage_mult
+	ammo_multiplier = next_round_ammo_mult
+	next_round_damage_mult = 1.0
+	next_round_ammo_mult = 1.0
+
+	if damage_multiplier > 1.0:
+		magazine.modifier_tint = Color(0.9, 0.15, 0.1, 0.3)
+	elif ammo_multiplier > 1.0:
+		magazine.modifier_tint = Color(0.9, 0.7, 0.15, 0.3)
+	else:
+		magazine.modifier_tint = Color(1, 1, 1, 0)
+
+	tick_cooldowns()
+	update_all_powerup_ui()
+
+	# Process burn DOT on all bricks
+	for brick in brick_container.get_children():
+		if brick.has_method("process_burn"):
+			brick.process_burn()
+
+	# Burn round modifier only applies to the current round's launched balls
+	burn_round_active = false
+
+	# Regenerate boss shields
+	for brick in brick_container.get_children():
+		if brick.has_method("regenerate_shield"):
+			brick.regenerate_shield()
+
+	spawn_guardians_if_needed()
+
 	if pending_ammo > 0:
 		for i in range(pending_ammo):
 			magazine.add_ball_plop()
@@ -439,16 +651,128 @@ func end_round():
 		spawn_ammo_popup(pending_ammo)
 		pending_ammo = 0
 
-	# Refresh preview ball (in case explosive toggled)
 	create_preview_ball()
 	if preview_ball:
 		preview_ball.visible = false
-
+	spawn_round_content()
 	start_slide_existing()
+
+func spawn_guardians_if_needed():
+	for brick in brick_container.get_children():
+		if brick.has_method("should_spawn_guardians") and brick.should_spawn_guardians():
+			var boss_row = round((brick.position.y - grid_start_y) / cell_height)
+			var target_row = boss_row + brick.grid_height + 1
+			if target_row < max_rows:
+				var occupied = get_occupied_cells()
+				var available = []
+				for c in range(grid_cols):
+					if Vector2(c, target_row) not in occupied:
+						available.append(c)
+				available.shuffle()
+				for i in range(min(2, available.size())):
+					var g = GUARDIAN_BRICK_SCENE.instantiate()
+					g.position = Vector2(grid_start_x + available[i] * cell_width, grid_start_y + target_row * cell_height)
+					brick_container.add_child(g)
+
+func spawn_round_content():
+	spawn_round_bricks_at_row0()
+	spawn_ammo_orbs_at_row0()
+	try_spawn_boss()
+	try_spawn_elite()
+	try_spawn_rainbow()
+
+func try_spawn_boss():
+	var boss_info = get_boss_info(current_round)
+	if boss_info:
+		spawn_boss(boss_info)
+
+func get_boss_info(round_num: int) -> Variant:
+	if boss_schedule.has(round_num):
+		var info = boss_schedule[round_num].duplicate()
+		info["hp_mult"] = 2
+		return info
+	if round_num >= final_boss_start and (round_num - final_boss_start) % final_boss_interval == 0:
+		var iteration = (round_num - final_boss_start) / final_boss_interval
+		return {
+			"w": 7, "h": 2, "shield": 50,
+			"hp_mult": 2, "is_final": true,
+			"health_override": 1000 + iteration * 500,
+			"guardians": true, "moves_every_other": true
+		}
+	return null
+
+func try_spawn_elite():
+	if current_round < 75 or active_elites >= max_elites:
+		return
+	var eligible = []
+	for boss_round in boss_schedule.keys():
+		if boss_round <= current_round - 50 and boss_round in bosses_killed:
+			eligible.append(boss_round)
+	if eligible.size() == 0:
+		return
+	if randf() < elite_chance:
+		var template_round = eligible[randi() % eligible.size()]
+		var info = boss_schedule[template_round].duplicate()
+		info["is_elite"] = true
+		info["hp_mult"] = 1
+		spawn_boss(info)
+		active_elites += 1
+
+func try_spawn_rainbow():
+	if rainbow_on_board:
+		return
+	rounds_since_rainbow += 1
+	var chance = rainbow_spawn_chance + int(rounds_since_rainbow / 10) * 0.05
+	if randf() < chance:
+		var occupied = get_occupied_cells()
+		var available = []
+		for c in range(grid_cols):
+			if Vector2(c, 0) not in occupied:
+				available.append(c)
+		if available.size() > 0:
+			var col = available[randi() % available.size()]
+			var rb = RAINBOW_BRICK_SCENE.instantiate()
+			rb.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
+			brick_container.add_child(rb)
+			rainbow_on_board = true
+
+func spawn_boss(info: Dictionary):
+	var boss = BOSS_BRICK_SCENE.instantiate()
+	boss.grid_width = info["w"]
+	boss.grid_height = info["h"]
+	if info.get("is_final", false):
+		boss.is_final_boss = true
+		boss.health = info.get("health_override", 1000)
+		boss.max_health = boss.health
+		boss.moves_every_other = info.get("moves_every_other", false)
+		boss.guardian_spawn_enabled = info.get("guardians", false)
+	elif info.get("is_elite", false):
+		boss.is_elite = true
+		boss.health = current_round
+		boss.max_health = current_round
+	else:
+		boss.health = current_round * info.get("hp_mult", 2)
+		boss.max_health = boss.health
+	if info["shield"] > 0:
+		boss.has_shield = true
+		boss.shield_hp = info["shield"]
+		boss.shield_max = info["shield"]
+	var max_col = grid_cols - info["w"]
+	var col = randi_range(0, max(0, max_col))
+	var x = grid_start_x + col * cell_width + (info["w"] - 1) * cell_width / 2.0
+	var y = grid_start_y + (info["h"] - 1) * cell_height / 2.0
+	boss.position = Vector2(x, y)
+	brick_container.add_child(boss)
+
+# ---- SLIDE & DROP ----
+
 func start_slide_existing():
 	is_sliding = true
 	slide_progress = 0.0
 	for brick in brick_container.get_children():
+		if brick.has_method("should_move_this_turn"):
+			if not brick.should_move_this_turn():
+				continue
 		brick.set_meta("slide_from", brick.position.y)
 		brick.set_meta("slide_to", brick.position.y + cell_height)
 	for orb in orb_container.get_children():
@@ -457,16 +781,19 @@ func start_slide_existing():
 
 func finish_slide():
 	for brick in brick_container.get_children():
-		brick.remove_meta("slide_from")
-		brick.remove_meta("slide_to")
+		if brick.has_meta("slide_from"):
+			brick.remove_meta("slide_from")
+		if brick.has_meta("slide_to"):
+			brick.remove_meta("slide_to")
 		var row = round((brick.position.y - grid_start_y) / cell_height)
 		if row >= death_row:
 			game_over()
 			return
-
 	for orb in orb_container.get_children():
-		orb.remove_meta("slide_from")
-		orb.remove_meta("slide_to")
+		if orb.has_meta("slide_from"):
+			orb.remove_meta("slide_from")
+		if orb.has_meta("slide_to"):
+			orb.remove_meta("slide_to")
 		if orb.position.y > arena_bottom:
 			orb.queue_free()
 
@@ -478,7 +805,6 @@ func finish_slide():
 	for orb in orb_container.get_children():
 		if orb.has_meta("first_round"):
 			orb.remove_meta("first_round")
-
 	if is_first:
 		after_drop_complete()
 	else:
@@ -491,35 +817,18 @@ func spawn_and_drop():
 		var col = round((brick.position.x - grid_start_x) / cell_width)
 		if row == 2:
 			occupied_at_row2[col] = true
-
-	var new_bricks = spawn_round_bricks_at_row0()
-	var new_orbs = spawn_ammo_orbs_at_row0()
-
 	dropping_bricks.clear()
 	dropping_orbs.clear()
-
-	var row0_y = grid_start_y
-	var row1_y = grid_start_y + cell_height
-
-	for brick in new_bricks:
-		var col = round((brick.position.x - grid_start_x) / cell_width)
-		var has_below = occupied_at_row2.has(col)
-		dropping_bricks.append({
-			"brick": brick,
-			"from_y": row0_y,
-			"to_y": row1_y,
-			"has_neighbor_below": has_below
-		})
-
-	for orb in new_orbs:
-		var col = round((orb.position.x - grid_start_x) / cell_width)
-		var has_below = occupied_at_row2.has(col)
-		dropping_orbs.append({
-			"orb": orb,
-			"from_y": row0_y,
-			"to_y": row1_y,
-			"has_neighbor_below": has_below
-		})
+	for brick in brick_container.get_children():
+		var row = round((brick.position.y - grid_start_y) / cell_height)
+		if row == 0:
+			var col = round((brick.position.x - grid_start_x) / cell_width)
+			dropping_bricks.append({"brick": brick, "from_y": brick.position.y, "to_y": brick.position.y + cell_height, "has_neighbor_below": occupied_at_row2.has(col)})
+	for orb in orb_container.get_children():
+		var row = round((orb.position.y - grid_start_y) / cell_height)
+		if row == 0:
+			var col = round((orb.position.x - grid_start_x) / cell_width)
+			dropping_orbs.append({"orb": orb, "from_y": orb.position.y, "to_y": orb.position.y + cell_height, "has_neighbor_below": occupied_at_row2.has(col)})
 	if dropping_bricks.size() > 0 or dropping_orbs.size() > 0:
 		is_dropping = true
 		drop_progress = 0.0
@@ -532,28 +841,24 @@ func finish_drop():
 			item["brick"].position.y = item["to_y"]
 			if item["has_neighbor_below"]:
 				spawn_dust(Vector2(item["brick"].position.x, item["to_y"] + 18))
-
 	for item in dropping_orbs:
 		if is_instance_valid(item["orb"]):
 			item["orb"].position.y = item["to_y"]
-
 	dropping_bricks.clear()
 	dropping_orbs.clear()
 	after_drop_complete()
-
 func after_drop_complete():
 	update_hud()
 	update_ammo_label_position()
 	ammo_label.visible = true
-
 	if preview_ball:
 		preview_ball.position = launch_point
 		preview_ball.visible = true
+
 func spawn_dust(pos: Vector2):
 	var dust = Node2D.new()
 	dust.position = pos
 	particle_container.add_child(dust)
-
 	for i in range(6):
 		var p = ColorRect.new()
 		var s = randf_range(2, 5)
@@ -561,32 +866,34 @@ func spawn_dust(pos: Vector2):
 		p.position = Vector2(-s/2, -s/2)
 		p.color = Color(0.75, 0.72, 0.68, 0.7)
 		dust.add_child(p)
-
 		var angle = randf_range(-0.4, 0.4) + (PI if i % 2 == 0 else 0)
-		var dist = randf_range(8, 22)
-		var target_pos = Vector2(cos(angle) * dist, -randf_range(2, 8))
-
+		var dist_val = randf_range(8, 22)
+		var target_pos = Vector2(cos(angle) * dist_val, -randf_range(2, 8))
 		var tween = p.create_tween()
 		tween.set_parallel(true)
 		tween.tween_property(p, "position", target_pos, 0.25).set_ease(Tween.EASE_OUT)
 		tween.tween_property(p, "modulate:a", 0.0, 0.25)
 		tween.chain().tween_callback(p.queue_free)
-
 	get_tree().create_timer(0.3).timeout.connect(func():
 		if is_instance_valid(dust):
 			dust.queue_free()
 	)
 
+# ---- SPAWNING ----
+
 func spawn_round_bricks_at_row0() -> Array:
 	var spawned = []
 	if not game_active:
 		return spawned
+	var occupied = get_occupied_cells()
 	var brick_count = randi_range(2, 5)
 	var columns = []
-	while columns.size() < brick_count:
+	var attempts = 0
+	while columns.size() < brick_count and attempts < 20:
 		var col = randi_range(0, grid_cols - 1)
-		if col not in columns:
+		if col not in columns and Vector2(col, 0) not in occupied:
 			columns.append(col)
+		attempts += 1
 	for col in columns:
 		var brick = BRICK_SCENE.instantiate()
 		brick.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
@@ -613,11 +920,30 @@ func spawn_ammo_orbs_at_row0() -> Array:
 		spawned.append(orb)
 	return spawned
 
-func spawn_round_bricks():
-	spawn_round_bricks_at_row0()
+func get_occupied_cells() -> Array:
+	var occupied = []
+	for brick in brick_container.get_children():
+		if brick.has_method("update_size"):
+			var center_col = round((brick.position.x - grid_start_x) / cell_width)
+			var center_row = round((brick.position.y - grid_start_y) / cell_height)
+			var half_w = (brick.grid_width - 1) / 2.0
+			var half_h = (brick.grid_height - 1) / 2.0
+			var start_col = int(center_col - half_w)
+			var start_row = int(center_row - half_h)
+			for dx in range(brick.grid_width):
+				for dy in range(brick.grid_height):
+					occupied.append(Vector2(start_col + dx, start_row + dy))
+		else:
+			var col = round((brick.position.x - grid_start_x) / cell_width)
+			var row = round((brick.position.y - grid_start_y) / cell_height)
+			occupied.append(Vector2(col, row))
+	for orb in orb_container.get_children():
+		var col = round((orb.position.x - grid_start_x) / cell_width)
+		var row = round((orb.position.y - grid_start_y) / cell_height)
+		occupied.append(Vector2(col, row))
+	return occupied
 
-func spawn_ammo_orbs():
-	spawn_ammo_orbs_at_row0()
+# ---- HUD & SCORE ----
 
 func spawn_ammo_popup(count: int):
 	var tier = min(count, 5)
@@ -627,10 +953,7 @@ func spawn_ammo_popup(count: int):
 	label.position = Vector2(launch_point.x - 40, launch_point.y - 30)
 	var sizes = [16, 22, 28, 36, 44]
 	label.add_theme_font_size_override("font_size", sizes[tier - 1])
-	var colors = [
-		Color(0.4, 0.8, 0.5), Color(0.3, 0.9, 0.4),
-		Color(0.95, 0.8, 0.2), Color(1.0, 0.5, 0.15), Color(1.0, 0.2, 0.3),
-	]
+	var colors = [Color(0.4, 0.8, 0.5), Color(0.3, 0.9, 0.4), Color(0.95, 0.8, 0.2), Color(1.0, 0.5, 0.15), Color(1.0, 0.2, 0.3)]
 	label.add_theme_color_override("font_color", colors[tier - 1])
 	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.4))
 	label.add_theme_constant_override("shadow_offset_x", 1)
@@ -647,6 +970,20 @@ func spawn_ammo_popup(count: int):
 		tween.tween_property(label, "scale", Vector2(1.0, 1.0), 0.3).set_ease(Tween.EASE_OUT)
 	tween.chain().tween_callback(label.queue_free)
 
+func spawn_modifier_popup(text: String, color: Color):
+	var label = Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.position = Vector2(155, launch_point.y - 50)
+	label.add_theme_font_size_override("font_size", 24)
+	label.add_theme_color_override("font_color", color)
+	add_child(label)
+	var tween = label.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 40, 1.2).set_ease(Tween.EASE_OUT)
+	tween.tween_property(label, "modulate:a", 0.0, 1.2).set_ease(Tween.EASE_IN)
+	tween.chain().tween_callback(label.queue_free)
+
 func game_over():
 	game_active = false
 	is_firing = true
@@ -659,7 +996,6 @@ func game_over():
 	final_score_label.visible = true
 	restart_button.visible = true
 	ammo_label.visible = false
-
 func add_score(points: int):
 	score += points
 	update_score_display()
@@ -681,27 +1017,15 @@ func update_score_display():
 	else:
 		score_label.add_theme_color_override("font_color", Color(1, 1, 1))
 
-func get_occupied_cells() -> Array:
-	var occupied = []
-	for brick in brick_container.get_children():
-		var col = round((brick.position.x - grid_start_x) / cell_width)
-		var row = round((brick.position.y - grid_start_y) / cell_height)
-		occupied.append(Vector2(col, row))
-	for orb in orb_container.get_children():
-		var col = round((orb.position.x - grid_start_x) / cell_width)
-		var row = round((orb.position.y - grid_start_y) / cell_height)
-		occupied.append(Vector2(col, row))
-	return occupied
-
 func update_hud():
 	ammo_label.text = "x%d" % (ammo + bonus_ammo)
 	round_label.text = "Round %d" % current_round
 	high_score_label.text = "Best: %d" % high_score
 	update_score_display()
+
 func collect_ammo_orb():
 	pending_ammo += 1
 	sound_manager.play_orb()
-
 func save_high_score():
 	var file = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file:
@@ -729,8 +1053,8 @@ func spawn_brick_particles(pos: Vector2, color: Color):
 		p.color = color
 		particles.add_child(p)
 		var angle = (TAU / 8.0) * i + randf_range(-0.3, 0.3)
-		var dist = randf_range(20, 50)
-		var target_pos = Vector2(cos(angle) * dist, sin(angle) * dist)
+		var dist_val = randf_range(20, 50)
+		var target_pos = Vector2(cos(angle) * dist_val, sin(angle) * dist_val)
 		var tween = p.create_tween()
 		tween.set_parallel(true)
 		tween.tween_property(p, "position", target_pos, 0.3).set_ease(Tween.EASE_OUT)
