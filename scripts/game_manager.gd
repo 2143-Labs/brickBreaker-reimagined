@@ -9,6 +9,8 @@ const BURN_BALL_SCENE = preload("res://scenes/burn_ball.tscn")
 const BOSS_BRICK_SCENE = preload("res://scenes/boss_brick.tscn")
 const GUARDIAN_BRICK_SCENE = preload("res://scenes/guardian_brick.tscn")
 const RAINBOW_BRICK_SCENE = preload("res://scenes/rainbow_brick.tscn")
+const ARMORED_BRICK_SCENE = preload("res://scenes/armored_brick.tscn")
+const OIL_BARREL_SCENE = preload("res://scenes/oil_barrel.tscn")
 const PICKUP_SCENE = preload("res://scenes/pickup.tscn")
 const SAVE_PATH = "user://highscore.save"
 
@@ -235,7 +237,7 @@ func _on_speed_pressed():
 
 func _on_restart_pressed():
 	Engine.time_scale = 1.0
-	get_tree().reload_current_scene()
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
 # ---- POWERUP MANAGEMENT ----
 
@@ -566,6 +568,69 @@ func spawn_explosion_vfx(center: Vector2, radius: float):
 		if is_instance_valid(explosion):
 			explosion.queue_free()
 	)
+
+func do_oil_barrel_explosion(center: Vector2, radius: float, base_damage: int):
+	sound_manager.play_explode()
+	add_shake(10.0)
+	# Bigger, fierier explosion VFX
+	var explosion = Node2D.new()
+	explosion.position = center
+	particle_container.add_child(explosion)
+	# Fire particles
+	for i in range(24):
+		var p = ColorRect.new()
+		var s = randf_range(4, 10)
+		p.size = Vector2(s, s)
+		p.position = Vector2(-s/2, -s/2)
+		p.color = [Color(1.0, 0.4, 0.05), Color(1.0, 0.6, 0.1), Color(1.0, 0.8, 0.2), Color(0.3, 0.3, 0.3)][randi() % 4]
+		explosion.add_child(p)
+		var angle = (TAU / 24.0) * i + randf_range(-0.15, 0.15)
+		var dist = randf_range(20, radius * 0.8)
+		var target_pos = Vector2(cos(angle) * dist, sin(angle) * dist)
+		var tween = p.create_tween()
+		tween.set_parallel(true)
+		tween.tween_property(p, "position", target_pos, 0.5).set_ease(Tween.EASE_OUT)
+		tween.tween_property(p, "modulate:a", 0.0, 0.5)
+		tween.chain().tween_callback(p.queue_free)
+	# Smoke ring
+	for i in range(8):
+		var smoke = ColorRect.new()
+		smoke.size = Vector2(8, 8)
+		smoke.position = Vector2(-4, -4)
+		smoke.color = Color(0.2, 0.2, 0.2, 0.4)
+		explosion.add_child(smoke)
+		var angle = randf_range(0, TAU)
+		var dist = randf_range(radius * 0.5, radius)
+		var target_pos = Vector2(cos(angle) * dist, sin(angle) * dist - 20)
+		var tween = smoke.create_tween()
+		tween.set_parallel(true)
+		tween.tween_property(smoke, "position", target_pos, 0.8).set_ease(Tween.EASE_OUT)
+		tween.tween_property(smoke, "modulate:a", 0.0, 0.8)
+		tween.chain().tween_callback(smoke.queue_free)
+	get_tree().create_timer(0.9).timeout.connect(func():
+		if is_instance_valid(explosion):
+			explosion.queue_free()
+	)
+	# Damage all bricks in radius - strips armor too
+	var inner_radius = radius * 0.3
+	for brick in brick_container.get_children():
+		var dist = center.distance_to(brick.position)
+		if dist <= radius:
+			# Strip armor on any armored brick in range
+			if brick.has_method("strip_armor"):
+				brick.strip_armor()
+			# Apply damage
+			if dist < 1.0:
+				brick.take_damage(base_damage)
+			elif dist <= inner_radius:
+				brick.take_damage(int(base_damage * 0.7))
+			else:
+				var falloff = 1.0 - (dist / radius)
+				brick.take_damage(max(1, int(base_damage * falloff)))
+			if brick.has_method("apply_explosion_crack"):
+				brick.apply_explosion_crack(0 if dist < inner_radius else 1 if dist < radius * 0.6 else 2)
+	# Screen flash for big explosion
+	spawn_screen_flash()
 func spawn_railgun_trail(pos: Vector2):
 	var trail = Node2D.new()
 	trail.position = pos
@@ -727,11 +792,43 @@ func spawn_guardians_if_needed():
 					brick_container.add_child(g)
 
 func spawn_round_content():
-	spawn_round_bricks_at_row0()
-	spawn_ammo_orbs_at_row0()
 	try_spawn_boss()
 	try_spawn_elite()
+	spawn_round_bricks_at_row0()
+	spawn_ammo_orbs_at_row0()
+	try_spawn_special_bricks()
 	try_spawn_rainbow()
+
+func try_spawn_special_bricks():
+	if not game_active:
+		return
+	var occupied = get_occupied_cells()
+	# Armored brick: 10% chance after round 15
+	if current_round >= 15 and randf() < 0.10:
+		var available = []
+		for c in range(grid_cols):
+			if Vector2(c, 0) not in occupied:
+				available.append(c)
+		if available.size() > 0:
+			var col = available[randi() % available.size()]
+			var brick = ARMORED_BRICK_SCENE.instantiate()
+			brick.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
+			brick.health = current_round
+			brick.max_health = current_round
+			brick_container.add_child(brick)
+			occupied.append(Vector2(col, 0))
+
+	# Oil barrel: 8% chance after round 10
+	if current_round >= 10 and randf() < 0.08:
+		var available = []
+		for c in range(grid_cols):
+			if Vector2(c, 0) not in occupied:
+				available.append(c)
+		if available.size() > 0:
+			var col = available[randi() % available.size()]
+			var barrel = OIL_BARREL_SCENE.instantiate()
+			barrel.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
+			brick_container.add_child(barrel)
 
 func try_spawn_boss():
 	var boss_info = get_boss_info(current_round)
@@ -1137,7 +1234,8 @@ func spawn_brick_particles(pos: Vector2, color: Color):
 # Combo tracking
 var combo_count: int = 0
 var combo_timer: float = 0.0
-var combo_timeout: float = 0.5  # seconds between kills to maintain combo
+var combo_timeout: float = 1.2  # seconds between kills to maintain combo
+var combo_label: Label = null
 
 func _process(delta):
 	# Combo timer decay
@@ -1169,41 +1267,46 @@ func spawn_screen_flash():
 	tween.tween_callback(flash.queue_free)
 
 func spawn_combo_text(combo: int):
-	var label = Label.new()
+	# Reuse single label — remove old one
+	if combo_label and is_instance_valid(combo_label):
+		combo_label.queue_free()
+
+	combo_label = Label.new()
 	if combo >= 10:
-		label.text = "ULTRA x%d!" % combo
+		combo_label.text = "ULTRA x%d!" % combo
 	elif combo >= 7:
-		label.text = "MEGA x%d!" % combo
+		combo_label.text = "MEGA x%d!" % combo
 	elif combo >= 5:
-		label.text = "COMBO x%d!" % combo
+		combo_label.text = "COMBO x%d!" % combo
 	else:
-		label.text = "x%d" % combo
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.position = Vector2(120, 250)
+		combo_label.text = "x%d" % combo
+	combo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	combo_label.position = Vector2(120, 250)
 
 	var size = min(18 + combo * 3, 42)
-	label.add_theme_font_size_override("font_size", size)
-	# Color escalates with combo
-	var col: Color
-	if combo >= 10:
-		col = Color(1.0, 0.2, 0.3)
-	elif combo >= 7:
-		col = Color(1.0, 0.5, 0.15)
-	elif combo >= 5:
-		col = Color(0.95, 0.8, 0.2)
-	else:
-		col = Color(1, 1, 1)
-	label.add_theme_color_override("font_color", col)
-	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
-	label.add_theme_constant_override("shadow_offset_x", 2)
-	label.add_theme_constant_override("shadow_offset_y", 2)
-	add_child(label)
+	combo_label.add_theme_font_size_override("font_size", size)
 
-	var tween = label.create_tween()
+	var col: Color
+	if combo >= 10: col = Color(1.0, 0.2, 0.3)
+	elif combo >= 7: col = Color(1.0, 0.5, 0.15)
+	elif combo >= 5: col = Color(0.95, 0.8, 0.2)
+	else: col = Color(1, 1, 1)
+	combo_label.add_theme_color_override("font_color", col)
+	combo_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
+	combo_label.add_theme_constant_override("shadow_offset_x", 2)
+	combo_label.add_theme_constant_override("shadow_offset_y", 2)
+
+	add_child(combo_label)
+
+	var tween = combo_label.create_tween()
 	tween.set_parallel(true)
-	tween.tween_property(label, "position:y", label.position.y - 30, 0.8).set_ease(Tween.EASE_OUT)
-	tween.tween_property(label, "modulate:a", 0.0, 0.8).set_ease(Tween.EASE_IN)
+	tween.tween_property(combo_label, "position:y", combo_label.position.y - 30, 0.8).set_ease(Tween.EASE_OUT)
+	tween.tween_property(combo_label, "modulate:a", 0.0, 0.8).set_ease(Tween.EASE_IN)
 	if combo >= 5:
-		label.scale = Vector2(1.4, 1.4)
-		tween.tween_property(label, "scale", Vector2(1.0, 1.0), 0.2).set_ease(Tween.EASE_OUT)
-	tween.chain().tween_callback(label.queue_free)
+		combo_label.scale = Vector2(1.4, 1.4)
+		tween.tween_property(combo_label, "scale", Vector2(1.0, 1.0), 0.2).set_ease(Tween.EASE_OUT)
+	tween.chain().tween_callback(func():
+		if is_instance_valid(combo_label):
+			combo_label.queue_free()
+			combo_label = null
+	)
