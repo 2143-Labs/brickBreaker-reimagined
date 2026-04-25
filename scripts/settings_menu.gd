@@ -16,17 +16,17 @@ var sfx_enabled: bool = true
 
 # Per-sound volume (0.0 to 1.0)
 var volumes: Dictionary = {
-    "master": 0.8,
+    "master": 1.0,
     "launch": 0.7,
-    "hit": 0.5,
-    "destroy": 0.8,
+    "hit": 1.0,
+    "destroy": 0.55,
     "multi_destroy": 0.8,
     "explode": 0.8,
     "nuke": 0.7,
-    "railgun": 0.7,
-    "orb_collect": 0.6,
+    "railgun": 0.9,
+    "orb_collect": 0.35,
     "reload": 0.5,
-    "bounce": 0.4,
+    "bounce": 1.0,
 }
 
 var sliders: Dictionary = {}

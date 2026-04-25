@@ -470,19 +470,49 @@ func update_aim_line(target: Vector2):
 	query.collision_mask = 1
 	var result = space_state.intersect_ray(query)
 	if result:
-		aim_line.add_point(launch_point)
-		aim_line.add_point(result.position)
+		# Dotted main line to first bounce
+		var total_dist = launch_point.distance_to(result.position)
+		var dir_norm = (result.position - launch_point).normalized()
+		var pos = launch_point
+		var traveled = 0.0
+		while traveled < total_dist:
+			var seg = min(8.0, total_dist - traveled)
+			aim_line.add_point(pos)
+			pos = pos + dir_norm * seg
+			traveled += seg
+			aim_line.add_point(pos)
+			var gap = min(5.0, total_dist - traveled)
+			pos = pos + dir_norm * gap
+			traveled += gap
+
+		# Bounce preview — shorter dots, fading feel
 		if active_powerup != ActivePowerup.RAILGUN:
 			var bounce_dir = direction.bounce(result.normal)
-			trajectory_preview.add_point(result.position)
-			trajectory_preview.add_point(result.position + bounce_dir * 150)
+			var b_pos = result.position
+			for i in range(5):
+				trajectory_preview.add_point(b_pos)
+				b_pos = b_pos + bounce_dir * 6.0
+				trajectory_preview.add_point(b_pos)
+				b_pos = b_pos + bounce_dir * 5.0
 		else:
-			# Railgun: show line continuing straight through
-			trajectory_preview.add_point(result.position)
-			trajectory_preview.add_point(result.position + direction * 300)
+			var b_pos = result.position
+			for i in range(10):
+				trajectory_preview.add_point(b_pos)
+				b_pos = b_pos + direction * 6.0
+				trajectory_preview.add_point(b_pos)
+				b_pos = b_pos + direction * 5.0
+
+		# Small dot at bounce point
+		trajectory_preview.add_point(result.position - Vector2(1, 0))
+		trajectory_preview.add_point(result.position + Vector2(1, 0))
 	else:
-		aim_line.add_point(launch_point)
-		aim_line.add_point(launch_point + direction * 800)
+		var dir_norm = direction
+		var pos = launch_point
+		for i in range(25):
+			aim_line.add_point(pos)
+			pos = pos + dir_norm * 8.0
+			aim_line.add_point(pos)
+			pos = pos + dir_norm * 5.0
 
 # ---- FIRING ----
 
