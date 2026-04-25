@@ -34,6 +34,7 @@ func _ready():
     stats_button.pressed.connect(_on_stats)
     shop_button.pressed.connect(_on_shop)
     stats_close.pressed.connect(func(): stats_panel.visible = false)
+    $SkillTreeButton.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/skill_tree.tscn"))
 
     resume_button.visible = has_save
     stats_panel.visible = false

@@ -16,6 +16,7 @@ var pulse_time: float = 0.0
 
 func _ready():
     add_to_group("balls")
+    explosion_radius = 110.0 * Progression.get_explosion_radius_mult()
     queue_redraw()
 
 func _draw():

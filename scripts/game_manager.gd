@@ -22,6 +22,7 @@ const SAVE_PATH = "user://highscore.save"
 @onready var round_label = $HUD/RoundLabel
 @onready var score_label = $HUD/ScoreLabel
 @onready var high_score_label = $HUD/HighScoreLabel
+@onready var xp_label_hud = $HUD/XPLabel
 @onready var orb_container = $OrbContainer
 @onready var speed_button = $HUD/SpeedButton
 @onready var restart_button = $HUD/RestartButton
@@ -31,6 +32,8 @@ const SAVE_PATH = "user://highscore.save"
 @onready var magazine = $Magazine
 @onready var sound_manager = $SoundManager
 @onready var launcher = $Launcher
+
+var settings_menu: Node = null
 
 # Powerup UI
 @onready var explosive_button = $HUD/PowerupBar/ExplosiveButton
@@ -51,6 +54,8 @@ var pending_ammo: int = 0
 var is_aiming: bool = false
 var is_firing: bool = false
 var railgun_deaths_pending: int = 0
+var railgun_total_kills: int = 0
+var railgun_active: bool = false
 var fire_direction: Vector2
 var balls_in_play: int = 0
 var preview_ball: Node2D = null
@@ -147,6 +152,11 @@ func _ready():
 
 	load_high_score()
 
+	# Apply talent effects
+	explosive_cooldown_max = max(1, 4 - Progression.get_cooldown_reduction())
+	railgun_cooldown_max = max(1, 8 - Progression.get_cooldown_reduction())
+	burn_cooldown_max = max(1, 5 - Progression.get_cooldown_reduction())
+
 	magazine.position = Vector2(0, launch_point.y + 25)
 	magazine.pipe_left = arena_left
 	magazine.pipe_right = arena_right
@@ -172,6 +182,30 @@ func _ready():
 	update_all_powerup_ui()
 	create_preview_ball()
 	queue_redraw()
+	# Combo bar
+	combo_bar = Node2D.new()
+	combo_bar.position = Vector2(0, arena_top + 2)
+	combo_bar.z_index = 5
+	combo_bar.visible = false
+	add_child(combo_bar)
+	combo_bar.draw.connect(_draw_combo_bar)
+
+	# Settings menu: instantiate on startup so it's available for the HUD GearButton
+	var settings_scene = preload("res://scenes/settings_menu.tscn")
+	settings_menu = settings_scene.instantiate()
+	add_child(settings_menu)
+	# Ensure the panel is hidden initially
+	if settings_menu and settings_menu.has_node("Panel"):
+		settings_menu.get_node("Panel").visible = false
+
+	# Connect gear button with debug prints and safe null check
+	$HUD/GearButton.pressed.connect(func():
+		print("Gear clicked")
+		if settings_menu:
+			settings_menu.toggle_menu()
+		else:
+			print("No settings menu!")
+	)
 func _draw():
 	var border_color = Color(1, 1, 1, 0.9)
 	var thickness = 2.0
@@ -188,12 +222,19 @@ func _physics_process(delta):
 		shake_amount = 0.0
 		position = original_position
 	if is_spawning and balls_to_spawn > 0:
-		spawn_distance_accumulator += 800.0 * delta
-		while spawn_distance_accumulator >= ball_spacing and balls_to_spawn > 0:
-			spawn_distance_accumulator -= ball_spacing
+		# Check if last spawned ball has traveled far enough
+		var can_spawn = true
+		if ball_container.get_child_count() > 0:
+			var last_ball = ball_container.get_child(ball_container.get_child_count() - 1)
+			if is_instance_valid(last_ball):
+				var dist_from_launch = last_ball.position.distance_to(launch_point)
+				if dist_from_launch < 1.0:  # ball diameter + padding
+					can_spawn = false
+		if can_spawn:
 			do_launch_ball()
 			balls_to_spawn -= 1
 			if balls_to_spawn <= 0:
+				is_spawning = false
 				is_spawning = false
 
 	if is_sliding:
@@ -259,6 +300,7 @@ func toggle_powerup(powerup: int):
 		ActivePowerup.EXPLOSIVE: launcher.set_type(1)
 		ActivePowerup.RAILGUN: launcher.set_type(2)
 		ActivePowerup.BURN: launcher.set_type(3)
+
 	update_launcher_type()
 
 func get_cooldown(powerup: int) -> int:
@@ -332,7 +374,7 @@ func _on_nuke_pressed():
 	update_all_powerup_ui()
 
 func do_nuke():
-	sound_manager.play_explode()
+	sound_manager.play_nuke()
 	add_shake(12.0)
 	spawn_modifier_popup("☢ NUKE ☢", Color(1.0, 0.9, 0.2))
 
@@ -421,6 +463,8 @@ func update_aim_line(target: Vector2):
 	launcher.set_aim(atan2(direction.y, direction.x))
 	aim_line.clear_points()
 	trajectory_preview.clear_points()
+
+	# launch sound will play when the first ball instance is actually launched
 	var space_state = get_world_2d().direct_space_state
 	var query = PhysicsRayQueryParameters2D.create(launch_point + direction * 2, launch_point + direction * 800)
 	query.collision_mask = 1
@@ -448,11 +492,27 @@ func start_firing():
 	first_ball_returned = false
 	pending_ammo = 0
 	railgun_deaths_pending = 0
+	railgun_total_kills = 0
+	railgun_active = false
 	if preview_ball:
 		preview_ball.visible = false
 	ammo_label.visible = false
 	aim_line.clear_points()
 	trajectory_preview.clear_points()
+
+	# Debug launch sound
+	print("Trying launch sound")
+	print("Players: ", sound_manager.players.keys())
+	var key = "launch"
+	if sound_manager.players.has(key):
+		print("Has player, stream: ", sound_manager.players[key].stream)
+		if sound_manager.players[key].stream:
+			sound_manager.players[key].play()
+			print("Playing!")
+		else:
+			print("No stream loaded!")
+	else:
+		print("No player for key: ", key)
 
 	var total = ammo + bonus_ammo
 	if ammo_multiplier > 1.0:
@@ -483,6 +543,10 @@ func start_firing():
 				ball.ball_landed.connect(_on_ball_landed)
 				ball_container.add_child(ball)
 				ball.launch(fire_direction)
+				if active_powerup == ActivePowerup.RAILGUN:
+					sound_manager.play_railgun()
+					# mark railgun active so normal destroy sounds are suppressed until railgun sequence completes
+					railgun_active = true
 				balls_in_play += 1
 				if active_powerup == ActivePowerup.RAILGUN:
 					# Railgun consumes all ammo - single shot only
@@ -499,16 +563,16 @@ func start_firing():
 				launcher.clear_aim()
 
 	if balls_to_spawn > 0:
-		spawn_distance_accumulator = ball_spacing
 		is_spawning = true
 	elif balls_in_play == 0:
 		end_round()
 
 func do_launch_ball():
+	sound_manager.play("launch")
 	var ball = BALL_SCENE.instantiate()
 	ball.position = launch_point
 	ball.speed = 800.0
-	ball.damage_multiplier = damage_multiplier
+	ball.damage_multiplier = damage_multiplier * Progression.get_damage_multiplier()
 	ball.is_powered = (damage_multiplier > 1.0)
 	# If a burn round is active, this ball will apply burn stacks on hit
 	ball.applies_burn = burn_round_active
@@ -717,8 +781,20 @@ func _on_ball_returned():
 
 func on_railgun_death_finished():
 	railgun_deaths_pending -= 1
-	if railgun_deaths_pending <= 0 and balls_in_play <= 0 and not is_spawning:
-		end_round()
+	railgun_total_kills += 1
+	
+	if railgun_deaths_pending <= 0:
+		# All railgun deaths done — play appropriate sound
+		if railgun_total_kills > 1:
+			sound_manager.play_multi_destroy()
+		else:
+			sound_manager.play_destroy()
+		railgun_total_kills = 0
+		# railgun sequence finished
+		railgun_active = false
+		
+		if balls_in_play <= 0 and not is_spawning:
+			end_round()
 
 func end_round():
 	is_firing = false
@@ -744,6 +820,11 @@ func end_round():
 	for brick in brick_container.get_children():
 		if brick.has_method("process_burn"):
 			brick.process_burn()
+
+	# Reset stacking hit counts for new round
+	for brick in brick_container.get_children():
+		if "hit_count" in brick:
+			brick.hit_count = 0
 
 	# Burn round modifier only applies to the current round's launched balls
 	burn_round_active = false
@@ -1003,6 +1084,7 @@ func after_drop_complete():
 	if preview_ball:
 		preview_ball.position = launch_point
 		preview_ball.visible = true
+	sound_manager.play_reload()
 	match active_powerup:
 		ActivePowerup.NONE: launcher.set_type(0)
 		ActivePowerup.EXPLOSIVE: launcher.set_type(1)
@@ -1072,6 +1154,16 @@ func spawn_ammo_orbs_at_row0() -> Array:
 		orb.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
 		orb_container.add_child(orb)
 		spawned.append(orb)
+		# Ammo magnet: chance for bonus orb
+		var magnet_chance = Progression.get_extra_orb_chance()
+		if magnet_chance > 0 and randf() < magnet_chance:
+			available.erase(col)
+			if available.size() > 0:
+				var col2 = available[randi() % available.size()]
+				var orb2 = AMMO_ORB_SCENE.instantiate()
+				orb2.position = Vector2(grid_start_x + col2 * cell_width, grid_start_y)
+				orb_container.add_child(orb2)
+				spawned.append(orb2)
 	return spawned
 
 func get_occupied_cells() -> Array:
@@ -1138,6 +1230,28 @@ func spawn_modifier_popup(text: String, color: Color):
 	tween.tween_property(label, "modulate:a", 0.0, 1.2).set_ease(Tween.EASE_IN)
 	tween.chain().tween_callback(label.queue_free)
 
+func spawn_score_popup(pos: Vector2, points: int):
+	var label = Label.new()
+	var display_points = points * max(1, combo_count)
+	label.text = "+%d" % display_points
+	label.position = pos + Vector2(-15, -10)
+	label.add_theme_font_size_override("font_size", 11 + min(combo_count, 5) * 2)
+
+	# Color based on combo
+	var col: Color
+	if combo_count >= 7: col = Color(1.0, 0.3, 0.2)
+	elif combo_count >= 5: col = Color(1.0, 0.5, 0.15)
+	elif combo_count >= 3: col = Color(0.95, 0.8, 0.2)
+	else: col = Color(1, 1, 1, 0.8)
+	label.add_theme_color_override("font_color", col)
+
+	add_child(label)
+	var tween = label.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 35, 0.7).set_ease(Tween.EASE_OUT)
+	tween.tween_property(label, "modulate:a", 0.0, 0.7).set_ease(Tween.EASE_IN)
+	tween.chain().tween_callback(label.queue_free)
+
 func game_over():
 	game_active = false
 	is_firing = true
@@ -1151,7 +1265,9 @@ func game_over():
 	restart_button.visible = true
 	ammo_label.visible = false
 func add_score(points: int):
-	score += points
+	var multiplied = points * max(1, combo_count)
+	score += multiplied
+	Progression.add_xp(multiplied)
 	update_score_display()
 
 func update_score_display():
@@ -1177,6 +1293,9 @@ func update_hud():
 	high_score_label.text = "Best: %d" % high_score
 	update_score_display()
 
+	if xp_label_hud:
+		xp_label_hud.text = "Lv%d  %d/%dXP  SP:%d" % [Progression.level, Progression.xp, Progression.xp_for_current_level(), Progression.skill_points]
+
 func collect_ammo_orb():
 	pending_ammo += 1
 	sound_manager.play_orb()
@@ -1195,7 +1314,8 @@ func load_high_score():
 
 func spawn_brick_particles_directional(pos: Vector2, color: Color, hit_dir: Vector2):
 	add_shake(3.0)
-	sound_manager.play_destroy()
+	if not railgun_active:
+		sound_manager.play_destroy()
 	var particles = Node2D.new()
 	particles.position = pos
 	particle_container.add_child(particles)
@@ -1236,13 +1356,29 @@ var combo_count: int = 0
 var combo_timer: float = 0.0
 var combo_timeout: float = 1.2  # seconds between kills to maintain combo
 var combo_label: Label = null
+var combo_bar: Node2D = null
+var combo_slow_timer: float = 0.0
 
 func _process(delta):
-	# Combo timer decay
+	# Combo timer decay (supports temporary slow-down when bricks are hit)
 	if combo_timer > 0:
-		combo_timer -= delta
+		var slow_ratio = clamp(combo_slow_timer / 0.1, 0.0, 1.0)
+		var decay_rate = lerp(1.0, 0.2, slow_ratio)
+		combo_timer -= delta * decay_rate
+		combo_slow_timer = max(0, combo_slow_timer - delta * 0.5)
+		if combo_bar:
+			combo_bar.visible = true
+			combo_bar.queue_redraw()
 		if combo_timer <= 0:
 			combo_count = 0
+			if combo_bar:
+				combo_bar.visible = false
+	elif combo_bar and combo_bar.visible:
+		combo_bar.visible = false
+
+func on_brick_hit():
+	if combo_count >= 2:
+		combo_slow_timer = 0.1
 
 func on_brick_destroyed():
 	combo_count += 1
@@ -1265,6 +1401,42 @@ func spawn_screen_flash():
 	var tween = flash.create_tween()
 	tween.tween_property(flash, "color:a", 0.0, 0.15)
 	tween.tween_callback(flash.queue_free)
+
+func _draw_combo_bar():
+	if combo_count < 2:
+		return
+	var bar_width = arena_right - arena_left
+	var bar_height = 4.0
+	var ratio = combo_timer / combo_timeout
+	var bar_y = 0.0
+
+	# Background
+	combo_bar.draw_rect(Rect2(arena_left, bar_y, bar_width, bar_height), Color(0.2, 0.2, 0.22, 0.5))
+
+	# Fill
+	var fill_width = bar_width * ratio
+	var bar_color: Color
+	if combo_count >= 7: bar_color = Color(1.0, 0.3, 0.15)
+	elif combo_count >= 5: bar_color = Color(1.0, 0.6, 0.15)
+	elif combo_count >= 3: bar_color = Color(0.95, 0.8, 0.25)
+	else: bar_color = Color(0.7, 0.7, 0.7)
+	combo_bar.draw_rect(Rect2(arena_left, bar_y, fill_width, bar_height), bar_color)
+
+	# Flame tip
+	if ratio > 0.05:
+		var tip_x = arena_left + fill_width
+		var flame_flicker = sin(Time.get_ticks_msec() * 0.015) * 2
+		combo_bar.draw_circle(Vector2(tip_x, bar_y + bar_height / 2 + flame_flicker), 4, Color(1.0, 0.5, 0.1, 0.6))
+		combo_bar.draw_circle(Vector2(tip_x, bar_y + bar_height / 2), 2.5, Color(1.0, 0.8, 0.3, 0.8))
+
+	# Multiplier text - centered above the bar, scales with combo
+	var font_size = 14 + min(combo_count, 8) * 3
+	var text = "%dx" % combo_count
+	var text_x = arena_left
+	var text_y = bar_y - 6
+	# Glow behind text
+	combo_bar.draw_string(ThemeDB.fallback_font, Vector2(text_x + 1, text_y + 1), text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, Color(0, 0, 0, 0.4))
+	combo_bar.draw_string(ThemeDB.fallback_font, Vector2(text_x, text_y), text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, bar_color)
 
 func spawn_combo_text(combo: int):
 	# Reuse single label — remove old one

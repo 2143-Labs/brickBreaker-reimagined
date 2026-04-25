@@ -17,6 +17,9 @@ var railgun_death: bool = false
 var railgun_direction: Vector2 = Vector2.ZERO
 var railgun_hit_offset: Vector2 = Vector2.ZERO
 
+# Stacking damage tracking: how many times same ball stream hit this brick
+var hit_count: int = 0
+
 static var tier_thresholds = [5, 10, 20, 50, 100]
 
 func get_color_for_hp(hp: int) -> Color:
@@ -26,7 +29,6 @@ func get_color_for_hp(hp: int) -> Color:
     elif hp >= 10: return Color(0.93, 0.5, 0.45)
     elif hp >= 5: return Color(0.95, 0.85, 0.4)
     else: return Color(0.6, 0.85, 0.55)
-
 func get_next_tier_color(hp: int) -> Color:
     if hp >= 100: return Color(0.4, 0.55, 0.9)
     elif hp >= 50: return Color(0.95, 0.65, 0.3)
@@ -62,6 +64,18 @@ func _process(delta):
 
 func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN):
     last_hit_direction = hit_dir
+
+    # Stacking damage bonus
+    hit_count += 1
+    var stack_max = Progression.get_stacking_damage_max()
+    if stack_max > 0:
+        var stack_bonus = min(hit_count - 1, stack_max)
+        amount += stack_bonus
+
+    # Cracked bricks take 2x damage
+    if crack_level > 0:
+        amount *= 2
+
     health -= amount
     update_display()
 
@@ -81,8 +95,15 @@ func add_burn_stack():
 
 func process_burn():
     if burn_stacks > 0:
-        take_damage(burn_stacks)
-        burn_stacks = int(burn_stacks / 2.0)
+        # Burn mastery adds extra ticks by making decay slower
+        var extra = Progression.get_burn_extra_ticks()
+        if extra > 0 and burn_stacks > 1:
+            take_damage(burn_stacks)
+            # Slower decay: divide by less
+            burn_stacks = int(burn_stacks / max(2.0 - extra * 0.2, 1.2))
+        else:
+            take_damage(burn_stacks)
+            burn_stacks = int(burn_stacks / 2.0)
 
 func apply_explosion_crack(ring: int):
     if ring == 0: crack_level = 3
@@ -156,7 +177,6 @@ func destroy():
     if manager:
         var points = get_brick_value()
         manager.add_score(points)
-
     if railgun_death:
         collision_layer = 0
         collision_mask = 0
@@ -203,7 +223,6 @@ func destroy():
                     mgr.spawn_brick_particles_directional(global_position, Color(0.6, 0.2, 0.9), railgun_direction)
                     mgr.spawn_brick_particles_directional(global_position, Color(0.7, 0.3, 1.0), railgun_direction)
                     mgr.add_shake(2.0)
-                    mgr.on_brick_destroyed()
                 queue_free()
                 if mgr:
                     mgr.on_railgun_death_finished()
@@ -211,6 +230,7 @@ func destroy():
     else:
         if manager and sprite:
             manager.spawn_brick_particles_directional(global_position, sprite.color, last_hit_direction)
+            manager.spawn_score_popup(global_position, get_brick_value())
             manager.on_brick_destroyed()
         queue_free()
 

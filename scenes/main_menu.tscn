@@ -82,6 +82,16 @@ text = "SHOP"
 theme_override_fonts/font = ExtResource("2")
 theme_override_font_sizes/font_size = 14
 
+[node name="SkillTreeButton" type="Button" parent="."]
+layout_mode = 1
+offset_left = 100.0
+offset_top = 590.0
+offset_right = 290.0
+offset_bottom = 630.0
+text = "SKILL TREE"
+theme_override_fonts/font = ExtResource("2")
+theme_override_font_sizes/font_size = 14
+
 [node name="VersionLabel" type="Label" parent="."]
 layout_mode = 1
 offset_left = 20.0

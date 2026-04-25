@@ -84,6 +84,7 @@ func _physics_process(delta):
 			var manager = get_tree().get_first_node_in_group("game_manager")
 			if manager and manager.sound_manager:
 				manager.sound_manager.play_hit()
+				manager.on_brick_hit()
 		else:
 			wall_bounce_count += 1
 			last_wall_bounce_time = time_alive

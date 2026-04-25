@@ -2,7 +2,6 @@
 
 [ext_resource type="Script" path="res://scripts/settings_menu.gd" id="1"]
 [ext_resource type="FontFile" path="res://assets/fonts/Inter.ttf" id="2"]
-
 [node name="SettingsMenu" type="CanvasLayer"]
 layer = 10
 process_mode = 3
@@ -18,104 +17,77 @@ visible = false
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-color = Color(0, 0, 0, 0.6)
+color = Color(0, 0, 0, 0.7)
 
 [node name="Title" type="Label" parent="Panel"]
 offset_left = 80.0
-offset_top = 180.0
+offset_top = 40.0
 offset_right = 310.0
-offset_bottom = 220.0
-text = "PAUSED"
+offset_bottom = 70.0
+text = "SETTINGS"
 horizontal_alignment = 1
 theme_override_fonts/font = ExtResource("2")
-theme_override_font_sizes/font_size = 28
+theme_override_font_sizes/font_size = 24
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 
 [node name="ResumeButton" type="Button" parent="Panel"]
 offset_left = 110.0
-offset_top = 260.0
+offset_top = 85.0
 offset_right = 280.0
-offset_bottom = 300.0
+offset_bottom = 115.0
 text = "RESUME"
 theme_override_fonts/font = ExtResource("2")
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 12
 
 [node name="RestartButton" type="Button" parent="Panel"]
 offset_left = 110.0
-offset_top = 315.0
+offset_top = 125.0
 offset_right = 280.0
-offset_bottom = 355.0
+offset_bottom = 155.0
 text = "RESTART"
 theme_override_fonts/font = ExtResource("2")
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 12
 
 [node name="MenuButton" type="Button" parent="Panel"]
 offset_left = 110.0
-offset_top = 370.0
+offset_top = 165.0
 offset_right = 280.0
-offset_bottom = 410.0
+offset_bottom = 195.0
 text = "MAIN MENU"
 theme_override_fonts/font = ExtResource("2")
-theme_override_font_sizes/font_size = 14
-[node name="Divider" type="ColorRect" parent="Panel"]
-offset_left = 80.0
-offset_top = 435.0
-offset_right = 310.0
-offset_bottom = 436.0
-color = Color(0.5, 0.5, 0.55, 0.5)
+theme_override_font_sizes/font_size = 12
 
 [node name="ShakeToggle" type="Button" parent="Panel"]
-offset_left = 60.0
-offset_top = 455.0
-offset_right = 195.0
-offset_bottom = 485.0
-text = "TOGGLE"
+offset_left = 40.0
+offset_top = 220.0
+offset_right = 200.0
+offset_bottom = 245.0
+text = "TOGGLE SHAKE"
 theme_override_fonts/font = ExtResource("2")
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 10
 
 [node name="ShakeLabel" type="Label" parent="Panel"]
-offset_left = 200.0
-offset_top = 460.0
-offset_right = 340.0
-offset_bottom = 480.0
+offset_left = 210.0
+offset_top = 224.0
+offset_right = 360.0
+offset_bottom = 242.0
 text = "Shake: ON"
 theme_override_fonts/font = ExtResource("2")
-theme_override_font_sizes/font_size = 12
-theme_override_colors/font_color = Color(0.4, 0.8, 0.4, 1)
-
-[node name="MusicToggle" type="Button" parent="Panel"]
-offset_left = 60.0
-offset_top = 495.0
-offset_right = 195.0
-offset_bottom = 525.0
-text = "TOGGLE"
-theme_override_fonts/font = ExtResource("2")
 theme_override_font_sizes/font_size = 11
-
-[node name="MusicLabel" type="Label" parent="Panel"]
-offset_left = 200.0
-offset_top = 500.0
-offset_right = 340.0
-offset_bottom = 520.0
-text = "Music: ON"
-theme_override_fonts/font = ExtResource("2")
-theme_override_font_sizes/font_size = 12
 theme_override_colors/font_color = Color(0.4, 0.8, 0.4, 1)
-[node name="SFXToggle" type="Button" parent="Panel"]
-offset_left = 60.0
-offset_top = 535.0
-offset_right = 195.0
-offset_bottom = 565.0
-text = "TOGGLE"
+[node name="AudioTitle" type="Label" parent="Panel"]
+offset_left = 40.0
+offset_top = 258.0
+offset_right = 350.0
+offset_bottom = 278.0
+text = "AUDIO LEVELS"
+horizontal_alignment = 1
 theme_override_fonts/font = ExtResource("2")
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
 
-[node name="SFXLabel" type="Label" parent="Panel"]
-offset_left = 200.0
-offset_top = 540.0
-offset_right = 340.0
-offset_bottom = 560.0
-text = "SFX: ON"
-theme_override_fonts/font = ExtResource("2")
-theme_override_font_sizes/font_size = 12
-theme_override_colors/font_color = Color(0.4, 0.8, 0.4, 1)
+[node name="SliderContainer" type="Control" parent="Panel"]
+offset_left = 40.0
+offset_top = 285.0
+offset_right = 350.0
+offset_bottom = 700.0
