@@ -19,6 +19,13 @@ var sound_map: Dictionary = {
 	"reload": "reload.wav",
 	"menu_select": "menuselect.wav",
 	"toggle": "toggle.wav",
+	# combo escalation sounds (5..10)
+	"combo5": "combo5.wav",
+	"combo6": "combo6.wav",
+	"combo7": "combo7.wav",
+	"combo8": "combo8.wav",
+	"combo9": "combo9.wav",
+	"combo10": "combo10.wav",
 }
 
 var destroy_count: int = 0
@@ -116,6 +123,27 @@ func play_menu_select():
 
 func play_toggle():
 	play("toggle")
+
+
+func play_combo(combo_count: int) -> void:
+	# Only play escalating combo sounds for 5 or more
+	if combo_count < 5:
+		return
+	var key: String
+	if combo_count >= 10:
+		# For 10+, play combo10 on even counts to avoid spamming on every destroy
+		if combo_count % 2 == 0:
+			key = "combo10"
+		else:
+			return
+	else:
+		# 5..9 map directly to combo5..combo9
+		key = "combo%d" % combo_count
+	# Fallback safety: only play if mapping exists
+	if sound_map.has(key):
+		play(key)
+	else:
+		print("SoundManager: missing combo sound mapping for", key)
 
 
 # stop_launch removed: we no longer use a looping launch sound

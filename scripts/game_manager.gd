@@ -1419,6 +1419,9 @@ func on_brick_destroyed():
 		spawn_screen_flash()
 		# Combo text
 		spawn_combo_text(combo_count)
+		# Play escalating combo audio for larger combos
+		if combo_count >= 5 and sound_manager:
+			sound_manager.play_combo(combo_count)
 
 func spawn_screen_flash():
 	var flash = ColorRect.new()
