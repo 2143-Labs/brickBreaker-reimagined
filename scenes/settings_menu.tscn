@@ -75,9 +75,27 @@ text = "Shake: ON"
 theme_override_fonts/font = ExtResource("2")
 theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.4, 0.8, 0.4, 1)
+[node name="GridToggle" type="Button" parent="Panel"]
+	offset_left = 40.0
+	offset_top = 255.0
+	offset_right = 200.0
+	offset_bottom = 280.0
+	text = "TOGGLE GRID"
+	theme_override_fonts/font = ExtResource("2")
+	theme_override_font_sizes/font_size = 10
+
+[node name="GridLabel" type="Label" parent="Panel"]
+	offset_left = 210.0
+	offset_top = 259.0
+	offset_right = 360.0
+	offset_bottom = 277.0
+	text = "Grid: ON"
+	theme_override_fonts/font = ExtResource("2")
+	theme_override_font_sizes/font_size = 11
+	theme_override_colors/font_color = Color(0.4, 0.8, 0.4, 1)
 [node name="AudioTitle" type="Label" parent="Panel"]
 offset_left = 40.0
-offset_top = 258.0
+	offset_top = 293.0
 offset_right = 350.0
 offset_bottom = 278.0
 text = "AUDIO LEVELS"
@@ -88,6 +106,6 @@ theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
 
 [node name="SliderContainer" type="Control" parent="Panel"]
 offset_left = 40.0
-offset_top = 285.0
+	offset_top = 320.0
 offset_right = 350.0
 offset_bottom = 700.0

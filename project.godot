@@ -18,6 +18,7 @@ config/features=PackedStringArray("4.5", "GL Compatibility")
 
 Progression="*res://scripts/progression.gd"
 MusicManager="*res://scripts/music_manager.gd"
+UITheme="*res://scripts/ui_theme.gd"
 
 [display]
 
@@ -36,3 +37,4 @@ pointing/emulate_touch_from_mouse=true
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.118, 0.125, 0.145, 1)

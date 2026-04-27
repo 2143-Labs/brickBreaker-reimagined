@@ -7,10 +7,13 @@ const SETTINGS_PATH = "user://settings.save"
 @onready var menu_btn = $Panel/MenuButton
 @onready var shake_toggle = $Panel/ShakeToggle
 @onready var shake_label = $Panel/ShakeLabel
+@onready var grid_toggle = $Panel/GridToggle
+@onready var grid_label = $Panel/GridLabel
 @onready var slider_container = $Panel/SliderContainer
 
 var is_open: bool = false
 var screen_shake_enabled: bool = true
+var grid_enabled: bool = true
 var music_enabled: bool = true
 var sfx_enabled: bool = true
 
@@ -39,6 +42,7 @@ func _ready():
 	restart_btn.pressed.connect(_on_restart)
 	menu_btn.pressed.connect(_on_menu)
 	shake_toggle.pressed.connect(_toggle_shake)
+	$Panel/GridToggle.pressed.connect(_toggle_grid)
 
 	build_sliders()
 	update_toggle_labels()
@@ -149,6 +153,12 @@ func close_menu():
 	is_open = false
 	panel.visible = false
 	get_tree().paused = false
+	var mgr = get_tree().get_first_node_in_group("game_manager")
+	if mgr:
+		if mgr.has_method("refresh_draw"):
+			mgr.refresh_draw()
+		else:
+			mgr.queue_redraw()
 
 func _on_restart():
 	close_menu()
@@ -165,6 +175,19 @@ func _toggle_shake():
 	update_toggle_labels()
 	save_settings()
 
+func _toggle_grid():
+	grid_enabled = !grid_enabled
+	save_settings()
+	update_toggle_labels()
+	# Notify the game manager to refresh its draw cache so the grid visibility updates immediately
+	var mgr = get_tree().get_first_node_in_group("game_manager")
+	if mgr:
+		# Prefer a provided refresh API, fall back to queue_redraw
+		if mgr.has_method("refresh_draw"):
+			mgr.refresh_draw()
+		else:
+			mgr.queue_redraw()
+
 func _toggle_music():
 	music_enabled = !music_enabled
 	MusicManager.set_music_enabled(music_enabled)
@@ -174,12 +197,15 @@ func _toggle_music():
 func update_toggle_labels():
 	shake_label.text = "Screen Shake: %s" % ("ON" if screen_shake_enabled else "OFF")
 	shake_label.add_theme_color_override("font_color", Color(0.4, 0.8, 0.4) if screen_shake_enabled else Color(0.8, 0.3, 0.3))
+	$Panel/GridLabel.text = "Grid: %s" % ("ON" if grid_enabled else "OFF")
+	$Panel/GridLabel.add_theme_color_override("font_color", Color(0.4, 0.8, 0.4) if grid_enabled else Color(0.8, 0.3, 0.3))
 
 func save_settings():
 	var file = FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if file:
 		file.store_var({
 			"shake": screen_shake_enabled,
+			"grid": grid_enabled,
 			"volumes": volumes,
 		})
 		file.close()
@@ -191,6 +217,7 @@ func load_settings():
 			var data = file.get_var()
 			if data is Dictionary:
 				screen_shake_enabled = data.get("shake", true)
+				grid_enabled = data.get("grid", true)
 				var saved_vols = data.get("volumes", {})
 				for key in saved_vols:
 					if volumes.has(key):

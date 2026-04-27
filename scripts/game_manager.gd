@@ -22,7 +22,10 @@ const SAVE_PATH = "user://highscore.save"
 @onready var round_label = $HUD/RoundLabel
 @onready var score_label = $HUD/ScoreLabel
 @onready var high_score_label = $HUD/HighScoreLabel
-@onready var xp_label_hud = $HUD/XPLabel
+@onready var xp_bar_fill = $HUD/XPBarFill
+@onready var xp_text = $HUD/XPText
+@onready var level_label = $HUD/LevelLabel
+@onready var sp_label = $HUD/SPLabel
 @onready var orb_container = $OrbContainer
 @onready var speed_button = $HUD/SpeedButton
 @onready var restart_button = $HUD/RestartButton
@@ -32,6 +35,8 @@ const SAVE_PATH = "user://highscore.save"
 @onready var magazine = $Magazine
 @onready var sound_manager = $SoundManager
 @onready var launcher = $Launcher
+@onready var xp_fill = $HUD/XPBar/XPFill
+@onready var xp_preview_fill = $HUD/XPPreviewFill
 
 var settings_menu: Node = null
 
@@ -47,6 +52,7 @@ var settings_menu: Node = null
 
 var current_round: int = 1
 var score: int = 0
+var pending_xp: int = 0
 var high_score: int = 0
 var ammo: int = 1
 var bonus_ammo: int = 0
@@ -74,7 +80,7 @@ var current_speed_idx: int = 0
 
 var arena_left: float = 13.0
 var arena_right: float = 377.0
-var arena_top: float = 80.0
+var arena_top: float = 130.0
 var grid_cols: int = 7
 var cell_width: float = 52.0
 var cell_height: float = 38.0
@@ -183,12 +189,16 @@ func _ready():
 	update_all_powerup_ui()
 	create_preview_ball()
 	queue_redraw()
-	# Combo bar
+	# Combo bar — add to HUD so it always renders above the game layer
 	combo_bar = Node2D.new()
 	combo_bar.position = Vector2(0, arena_top + 2)
-	combo_bar.z_index = 5
+	combo_bar.z_index = 100
 	combo_bar.visible = false
-	add_child(combo_bar)
+	# Add under the HUD CanvasLayer so it draws above Node2D children
+	if $HUD:
+		$HUD.add_child(combo_bar)
+	else:
+		add_child(combo_bar)
 	combo_bar.draw.connect(_draw_combo_bar)
 
 	# Settings menu: instantiate on startup so it's available for the HUD GearButton
@@ -211,12 +221,54 @@ func _ready():
 			print("No settings menu!")
 	)
 func _draw():
-	var border_color = Color(1, 1, 1, 0.9)
-	var thickness = 2.0
-	draw_line(Vector2(arena_left, arena_top), Vector2(arena_left, arena_bottom), border_color, thickness)
-	draw_line(Vector2(arena_right, arena_top), Vector2(arena_right, arena_bottom), border_color, thickness)
-	draw_line(Vector2(arena_left, arena_top), Vector2(arena_right, arena_top), border_color, thickness)
-	draw_line(Vector2(arena_left, arena_bottom), Vector2(arena_right, arena_bottom), border_color, thickness)
+	var border_color = Color(0.22, 0.24, 0.28, 0.5)
+	var corner_radius = 6.0
+
+	# Draw rounded arena border
+	var rect = Rect2(arena_left, arena_top, arena_right - arena_left, arena_bottom - arena_top)
+	# Border
+	draw_rounded_rect_outline(rect, border_color, corner_radius, 1.5)
+	# Grid lines
+	var should_draw_grid = true
+	if settings_menu != null:
+		should_draw_grid = settings_menu.grid_enabled
+	if should_draw_grid:
+		var grid_color = Color(0.16, 0.18, 0.21, 0.2)
+		for i in range(1, grid_cols):
+			var x = arena_left + i * cell_width
+			draw_line(Vector2(x, arena_top), Vector2(x, arena_bottom), grid_color, 1.0)
+		for i in range(1, max_rows):
+			var y = arena_top + i * cell_height
+			draw_line(Vector2(arena_left, y), Vector2(arena_right, y), grid_color, 1.0)
+
+func draw_rounded_rect(rect: Rect2, color: Color, radius: float):
+	# Center fill
+	draw_rect(Rect2(rect.position.x + radius, rect.position.y, rect.size.x - radius * 2, rect.size.y), color)
+	draw_rect(Rect2(rect.position.x, rect.position.y + radius, rect.size.x, rect.size.y - radius * 2), color)
+	# Corner circles
+	draw_circle(Vector2(rect.position.x + radius, rect.position.y + radius), radius, color)
+	draw_circle(Vector2(rect.end.x - radius, rect.position.y + radius), radius, color)
+	draw_circle(Vector2(rect.position.x + radius, rect.end.y - radius), radius, color)
+	draw_circle(Vector2(rect.end.x - radius, rect.end.y - radius), radius, color)
+
+func draw_rounded_rect_outline(rect: Rect2, color: Color, radius: float, width: float):
+	# Top
+	draw_line(Vector2(rect.position.x + radius, rect.position.y), Vector2(rect.end.x - radius, rect.position.y), color, width)
+	# Bottom
+	draw_line(Vector2(rect.position.x + radius, rect.end.y), Vector2(rect.end.x - radius, rect.end.y), color, width)
+	# Left
+	draw_line(Vector2(rect.position.x, rect.position.y + radius), Vector2(rect.position.x, rect.end.y - radius), color, width)
+	# Right
+	draw_line(Vector2(rect.end.x, rect.position.y + radius), Vector2(rect.end.x, rect.end.y - radius), color, width)
+	# Corners
+	draw_arc(Vector2(rect.position.x + radius, rect.position.y + radius), radius, PI, PI * 1.5, 8, color, width)
+	draw_arc(Vector2(rect.end.x - radius, rect.position.y + radius), radius, PI * 1.5, TAU, 8, color, width)
+	draw_arc(Vector2(rect.position.x + radius, rect.end.y - radius), radius, PI * 0.5, PI, 8, color, width)
+	draw_arc(Vector2(rect.end.x - radius, rect.end.y - radius), radius, 0, PI * 0.5, 8, color, width)
+
+# Public helper so external menus can request a redraw when settings change
+func refresh_draw():
+	queue_redraw()
 
 func _physics_process(delta):
 	if shake_amount > 0.1:
@@ -554,6 +606,13 @@ func start_firing():
 		total = int(total * ammo_multiplier)
 	balls_to_spawn = total
 
+	# Reset pending XP preview when firing begins
+	pending_xp = 0
+	if xp_preview_fill:
+		xp_preview_fill.visible = false
+		xp_preview_fill.offset_left = 60.0
+		xp_preview_fill.offset_right = 60.0
+
 	# Fire special ball first if powerup armed
 	if active_powerup != ActivePowerup.NONE:
 		# BURN is a round modifier: enable burn for the whole round and don't spawn a special ball
@@ -805,10 +864,13 @@ func on_boss_killed(boss):
 func _on_ball_landed(x_pos: float):
 	if not first_ball_returned:
 		first_ball_returned = true
+		# Record the next launch x based on where the ball landed
+		next_launch_x = clamp(x_pos, arena_left + 15, arena_right - 15)
 		magazine.shift_entrance_to(next_launch_x)
 		# Animate launcher to new position in sync with magazine
 		var tween = create_tween()
 		tween.tween_property(launcher, "position:x", next_launch_x, 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+
 
 func _on_ball_returned():
 	balls_in_play -= 1
@@ -859,8 +921,8 @@ func end_round():
 
 	# Move magazine entrance and animate launcher to the new launch position
 	magazine.shift_entrance_to(next_launch_x)
-	var tween = create_tween()
-	tween.tween_property(launcher, "position:x", next_launch_x, 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	var launcher_tween = create_tween()
+	launcher_tween.tween_property(launcher, "position:x", next_launch_x, 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 
 	damage_multiplier = next_round_damage_mult
 	ammo_multiplier = next_round_ammo_mult
@@ -896,6 +958,19 @@ func end_round():
 			brick.remove_meta("railgun_hit")
 
 	# Regenerate boss shields
+	# Flash XP preview to green then apply
+	if pending_xp > 0 and xp_preview_fill:
+		xp_preview_fill.color = Color(0.741, 1.0, 0.024, 0.8)
+		var xp_tween = create_tween()
+		xp_tween.tween_property(xp_preview_fill, "modulate:a", 0.0, 0.3)
+		xp_tween.tween_callback(func():
+			xp_preview_fill.visible = false
+			xp_preview_fill.modulate.a = 1.0
+			xp_preview_fill.color = Color(1, 1, 1, 0.5)
+		)
+	Progression.add_xp(pending_xp)
+	pending_xp = 0
+	update_hud()
 	for brick in brick_container.get_children():
 		if brick.has_method("regenerate_shield"):
 			brick.regenerate_shield()
@@ -1332,34 +1407,57 @@ func game_over():
 func add_score(points: int):
 	var multiplied = points * max(1, combo_count)
 	score += multiplied
-	Progression.add_xp(multiplied)
+	pending_xp += multiplied
 	update_score_display()
+	update_xp_preview()
 
 func update_score_display():
 	score_label.text = str(score)
 	if score >= 1000:
-		score_label.add_theme_color_override("font_color", Color(1.0, 0.2, 0.3))
+		score_label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
 	elif score >= 500:
-		score_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.15))
+		score_label.add_theme_color_override("font_color", Color(1.0, 0.6, 0.2))
 	elif score >= 200:
-		score_label.add_theme_color_override("font_color", Color(0.95, 0.8, 0.2))
+		score_label.add_theme_color_override("font_color", Color(0.95, 0.85, 0.2))
 	elif score >= 100:
-		score_label.add_theme_color_override("font_color", Color(0.6, 0.4, 0.9))
+		score_label.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4))
 	elif score >= 50:
-		score_label.add_theme_color_override("font_color", Color(0.3, 0.55, 0.95))
-	elif score >= 20:
-		score_label.add_theme_color_override("font_color", Color(0.3, 0.85, 0.5))
+		score_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.35))
 	else:
-		score_label.add_theme_color_override("font_color", Color(1, 1, 1))
+		score_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+
+func update_xp_preview():
+	if not xp_preview_fill or not xp_bar_fill:
+		return
+	var bar_start = 60.0
+	var bar_width = 240.0
+	var xp_needed = Progression.xp_for_current_level()
+	var current_ratio = float(Progression.xp) / max(xp_needed, 1)
+	var preview_ratio = clamp(float(Progression.xp + pending_xp) / max(xp_needed, 1), 0.0, 1.0)
+
+	xp_preview_fill.offset_left = bar_start + current_ratio * bar_width
+	xp_preview_fill.offset_right = bar_start + preview_ratio * bar_width
+	xp_preview_fill.visible = pending_xp > 0
 
 func update_hud():
 	ammo_label.text = "x%d" % (ammo + bonus_ammo)
-	round_label.text = "Round %d" % current_round
-	high_score_label.text = "Best: %d" % high_score
+	round_label.text = "%d" % current_round
+	high_score_label.text = "BEST %d" % high_score
 	update_score_display()
-
-	if xp_label_hud:
-		xp_label_hud.text = "Lv%d  %d/%dXP  SP:%d" % [Progression.level, Progression.xp, Progression.xp_for_current_level(), Progression.skill_points]
+	# XP display
+	if xp_bar_fill and xp_text and level_label and sp_label:
+		var progress = Progression.xp_progress()
+		xp_bar_fill.offset_right = 60.0 + progress * 240.0
+		xp_text.text = "%d / %d XP" % [Progression.xp, Progression.xp_for_current_level()]
+		level_label.text = "LV %d" % Progression.level
+		# Update SP prefix and numeric label separately
+		if $HUD.has_node("SPPrefix"):
+			$HUD.get_node("SPPrefix").add_theme_color_override("font_color", Color(0.5, 0.5, 0.55, 1))
+		if Progression.skill_points > 0:
+			$HUD.get_node("SPLabel").add_theme_color_override("font_color", Color(0.741, 1.0, 0.024, 1))
+		else:
+			$HUD.get_node("SPLabel").add_theme_color_override("font_color", Color(0.5, 0.5, 0.55, 1))
+		$HUD.get_node("SPLabel").text = "%d" % Progression.skill_points
 
 func collect_ammo_orb():
 	pending_ammo += 1
@@ -1500,7 +1598,7 @@ func _draw_combo_bar():
 	var bar_y = 0.0
 
 	# Background
-	combo_bar.draw_rect(Rect2(arena_left, bar_y, bar_width, bar_height), Color(0.2, 0.2, 0.22, 0.5))
+	combo_bar.draw_rect(Rect2(arena_left, bar_y, bar_width, bar_height), Color(0.2, 0.22, 0.25, 0.8))
 
 	# Fill
 	var fill_width = bar_width * ratio

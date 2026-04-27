@@ -4,8 +4,8 @@ var tube_points: PackedVector2Array = PackedVector2Array()
 var ball_positions: Array = []
 var total_ammo: int = 0
 var balls_in_tube: int = 0
-var tube_color = Color(0.72, 0.72, 0.75, 1.0)
-var tube_inner_color = Color(0.82, 0.82, 0.85, 1.0)
+var tube_color = Color(0.16, 0.18, 0.21, 1.0)
+var tube_inner_color = Color(0.2, 0.22, 0.26, 1.0)
 var ball_color = Color(0.3, 0.55, 0.95)
 var modifier_tint = Color(1, 1, 1, 0)
 var tube_width: float = 22.0
@@ -155,15 +155,15 @@ func _draw():
 
 	# Entrance funnel
 	var entrance_pos = tube_points[0]
-	draw_circle(entrance_pos, tube_width / 2.0 + 3, Color(0.65, 0.65, 0.68, 1.0))
+	draw_circle(entrance_pos, tube_width / 2.0 + 3, Color(0.22, 0.24, 0.28, 1.0))
 	draw_circle(entrance_pos, tube_width / 2.0, tube_inner_color)
-	var bolt_color = Color(0.55, 0.55, 0.58, 1.0)
+	var bolt_color = Color(0.25, 0.27, 0.3, 1.0)
 	draw_circle(entrance_pos + Vector2(-tube_width/2 - 1, 0), 3, bolt_color)
 	draw_circle(entrance_pos + Vector2(tube_width/2 + 1, 0), 3, bolt_color)
 
 	# Chevron markers
 	var tube_len = get_tube_length()
-	var marker_color = Color(0.6, 0.6, 0.63, 0.4)
+	var marker_color = Color(0.25, 0.27, 0.3, 0.4)
 	var d = marker_offset
 	while d < tube_len:
 		var pos = get_point_at_distance(d)
