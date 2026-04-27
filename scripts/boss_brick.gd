@@ -59,7 +59,11 @@ func update_size():
     shield_bar.offset_right = half_w
     shield_bar.offset_bottom = -half_h - 1
 
-func take_damage(amount: int, _hit_dir: Vector2 = Vector2.DOWN):
+func take_damage(amount: int, _hit_dir: Vector2 = Vector2.DOWN, is_special: bool = false):
+    # Bosses and elites take 50% less from bombs and railguns
+    if is_special:
+        amount = max(1, int(amount * 0.5))
+
     if has_shield and shield_hp > 0:
         var absorbed = min(shield_hp, amount)
         shield_hp -= absorbed
@@ -114,6 +118,8 @@ func update_shield_display():
         shield_bar.modulate = Color(1, 1, 1, 0.3)
     else:
         shield_bar.modulate = Color(1, 1, 1, 1)
+    # Refresh numeric label too
+    update_display()
 
 func apply_explosion_crack(ring: int):
     if ring == 0:
@@ -153,8 +159,12 @@ func _draw_cracks():
             crack_overlay.draw_line(end, b_end, crack_color, crack_width * 0.7)
 func update_display():
     if health_label:
-        health_label.text = str(health)
-        health_label.add_theme_color_override("font_color", Color(1, 1, 1))
+        if has_shield and shield_hp > 0:
+            health_label.text = str(shield_hp)
+            health_label.add_theme_color_override("font_color", Color(0.3, 0.6, 1.0))
+        else:
+            health_label.text = str(health)
+            health_label.add_theme_color_override("font_color", Color(1, 1, 1))
         var font_size = 20 if not is_final_boss else 24
         health_label.add_theme_font_size_override("font_size", font_size)
     if sprite:

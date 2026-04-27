@@ -17,6 +17,7 @@ var last_brick_hit_time: float = 0.0
 var time_alive: float = 0.0
 var stuck_threshold: float = 1.5
 var last_wall_bounce_time: float = 0.0
+var max_alive_time: float = 15.0  # force return after 15 seconds alive
 
 # Trail
 var trail_points: Array = []
@@ -95,6 +96,14 @@ func _physics_process(delta):
 	# Stuck detection
 	if time_alive - last_brick_hit_time > stuck_threshold and wall_bounce_count > 4:
 		unstick()
+
+	# Hard timeout 	6 force return if ball has been alive too long
+	if time_alive > max_alive_time:
+		is_active = false
+		ball_landed.emit(position.x)
+		ball_returned.emit()
+		queue_free()
+		return
 
 	queue_redraw()
 

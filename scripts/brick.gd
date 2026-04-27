@@ -62,7 +62,7 @@ func _process(delta):
     elif fire_overlay:
         fire_overlay.visible = false
 
-func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN):
+func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
     last_hit_direction = hit_dir
 
     # Stacking damage bonus

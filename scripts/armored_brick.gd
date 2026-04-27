@@ -20,7 +20,7 @@ func _ready():
     armor_overlay.draw.connect(_draw_armor)
     armor_overlay.queue_redraw()
 
-func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN):
+func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
     last_hit_direction = hit_dir
     if armored:
         # Armored: immune to normal damage, show deflect effect

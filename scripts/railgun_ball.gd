@@ -88,7 +88,7 @@ func _physics_process(delta):
 
 			if brick.has_method("update_size"):
 				var dmg = max(1, int(brick.health / 2.0))
-				brick.take_damage(dmg)
+				brick.take_damage(dmg, direction, true)
 				spawn_tunnel_hole(manager, hit_point)
 				spawn_purple_spray(manager, hit_point)
 			else:

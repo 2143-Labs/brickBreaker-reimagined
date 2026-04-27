@@ -28,7 +28,7 @@ func _process(delta):
     if warning_overlay:
         warning_overlay.queue_redraw()
 
-func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN):
+func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
     last_hit_direction = hit_dir
     health -= amount
     update_display()

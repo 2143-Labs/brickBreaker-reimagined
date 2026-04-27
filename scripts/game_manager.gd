@@ -61,6 +61,7 @@ var balls_in_play: int = 0
 var preview_ball: Node2D = null
 var game_active: bool = true
 var first_ball_returned: bool = false
+var first_ball_missed: bool = false
 var next_launch_x: float = 195.0
 
 var is_spawning: bool = false
@@ -197,6 +198,9 @@ func _ready():
 	# Ensure the panel is hidden initially
 	if settings_menu and settings_menu.has_node("Panel"):
 		settings_menu.get_node("Panel").visible = false
+
+	# Start game music
+	MusicManager.start_game_music()
 
 	# Connect gear button with debug prints and safe null check
 	$HUD/GearButton.pressed.connect(func():
@@ -520,6 +524,7 @@ func start_firing():
 	is_firing = true
 	balls_in_play = 0
 	first_ball_returned = false
+	first_ball_missed = false
 	pending_ammo = 0
 	railgun_deaths_pending = 0
 	railgun_total_kills = 0
@@ -627,17 +632,17 @@ func do_explosion(center: Vector2, radius: float):
 	for brick in brick_container.get_children():
 		var dist = center.distance_to(brick.position)
 		if dist < 1.0:
-			brick.take_damage(direct_damage)
-			if brick.has_method("apply_explosion_crack"):
-				brick.apply_explosion_crack(0)
+				brick.take_damage(direct_damage, Vector2.DOWN, true)
+				if brick.has_method("apply_explosion_crack"):
+					brick.apply_explosion_crack(0)
 		elif dist <= inner_radius:
-			brick.take_damage(inner_damage)
-			if brick.has_method("apply_explosion_crack"):
-				brick.apply_explosion_crack(1)
+				brick.take_damage(inner_damage, Vector2.DOWN, true)
+				if brick.has_method("apply_explosion_crack"):
+					brick.apply_explosion_crack(1)
 		elif dist <= radius:
-			brick.take_damage(outer_damage)
-			if brick.has_method("apply_explosion_crack"):
-				brick.apply_explosion_crack(2)
+				brick.take_damage(outer_damage, Vector2.DOWN, true)
+				if brick.has_method("apply_explosion_crack"):
+					brick.apply_explosion_crack(2)
 
 func spawn_explosion_vfx(center: Vector2, radius: float):
 	var explosion = Node2D.new()
@@ -715,12 +720,12 @@ func do_oil_barrel_explosion(center: Vector2, radius: float, base_damage: int):
 				brick.strip_armor()
 			# Apply damage
 			if dist < 1.0:
-				brick.take_damage(base_damage)
+				brick.take_damage(base_damage, Vector2.DOWN, true)
 			elif dist <= inner_radius:
-				brick.take_damage(int(base_damage * 0.7))
+				brick.take_damage(int(base_damage * 0.7), Vector2.DOWN, true)
 			else:
 				var falloff = 1.0 - (dist / radius)
-				brick.take_damage(max(1, int(base_damage * falloff)))
+				brick.take_damage(max(1, int(base_damage * falloff)), Vector2.DOWN, true)
 			if brick.has_method("apply_explosion_crack"):
 				brick.apply_explosion_crack(0 if dist < inner_radius else 1 if dist < radius * 0.6 else 2)
 	# Screen flash for big explosion
@@ -782,6 +787,12 @@ func on_boss_killed(boss):
 		spawn_modifier_popup("FINAL BOSS DEFEATED!", Color(1.0, 0.85, 0.2))
 	elif boss.is_elite:
 		active_elites -= 1
+		# Drop a random powerup (0 or 1)
+		var pickup = PICKUP_SCENE.instantiate()
+		pickup.position = boss.global_position
+		pickup.pickup_type = randi_range(0, 1)
+		orb_container.add_child(pickup)
+		spawn_modifier_popup("ELITE DEFEATED!", Color(0.6, 0.3, 0.9))
 	# Track killed boss rounds for elite system
 	for round_num in boss_schedule.keys():
 		var info = boss_schedule[round_num]
@@ -794,7 +805,6 @@ func on_boss_killed(boss):
 func _on_ball_landed(x_pos: float):
 	if not first_ball_returned:
 		first_ball_returned = true
-		next_launch_x = clamp(x_pos, arena_left + 15, arena_right - 15)
 		magazine.shift_entrance_to(next_launch_x)
 		# Animate launcher to new position in sync with magazine
 		var tween = create_tween()
@@ -808,6 +818,22 @@ func _on_ball_returned():
 			pass  # Wait for railgun deaths to finish
 		else:
 			end_round()
+
+func on_ball_missed():
+	if first_ball_missed:
+		return
+	# Only trigger after 55+ balls have fired
+	var total = ammo + bonus_ammo
+	var balls_fired = total - balls_to_spawn
+	if balls_fired < 55:
+		return
+	first_ball_missed = true
+	# If still spawning, cancel remaining balls and return them to the magazine
+	if is_spawning:
+		for i in range(balls_to_spawn):
+			magazine.return_ball()
+		balls_to_spawn = 0
+		is_spawning = false
 
 func on_railgun_death_finished():
 	railgun_deaths_pending -= 1
@@ -830,6 +856,11 @@ func end_round():
 	is_firing = false
 	current_round += 1
 	launch_point.x = next_launch_x
+
+	# Move magazine entrance and animate launcher to the new launch position
+	magazine.shift_entrance_to(next_launch_x)
+	var tween = create_tween()
+	tween.tween_property(launcher, "position:x", next_launch_x, 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 
 	damage_multiplier = next_round_damage_mult
 	ammo_multiplier = next_round_ammo_mult
@@ -1010,6 +1041,10 @@ func spawn_boss(info: Dictionary):
 		boss.is_elite = true
 		boss.health = current_round
 		boss.max_health = current_round
+		# Give elites a shield equal to their HP
+		boss.has_shield = true
+		boss.shield_hp = current_round
+		boss.shield_max = current_round
 	else:
 		boss.health = current_round * info.get("hp_mult", 2)
 		boss.max_health = boss.health
@@ -1420,8 +1455,29 @@ func on_brick_destroyed():
 		# Combo text
 		spawn_combo_text(combo_count)
 		# Play escalating combo audio for larger combos
-		if combo_count >= 5 and sound_manager:
-			sound_manager.play_combo(combo_count)
+	if combo_count >= 5 and sound_manager:
+		sound_manager.play_combo(combo_count)
+
+	# Check if board is clear
+	call_deferred("check_early_round_end")
+
+
+func check_early_round_end():
+	# Only consider early end while firing
+	if not is_firing:
+		return
+	# Only if we have a large amount of ammo
+	if (ammo + bonus_ammo) < 50:
+		return
+	# If no bricks or pickups remain, force balls to return and end the round
+	if brick_container.get_child_count() == 0 and orb_container.get_child_count() == 0:
+		for ball in ball_container.get_children():
+			if is_instance_valid(ball):
+				ball.queue_free()
+		balls_in_play = 0
+		is_spawning = false
+		balls_to_spawn = 0
+		end_round()
 
 func spawn_screen_flash():
 	var flash = ColorRect.new()

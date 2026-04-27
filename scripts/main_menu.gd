@@ -38,6 +38,8 @@ func _ready():
 
     resume_button.visible = has_save
     stats_panel.visible = false
+    # Start menu music
+    MusicManager.start_menu_music()
 func _process(delta):
     anim_time += delta
     # Subtle title color pulse
