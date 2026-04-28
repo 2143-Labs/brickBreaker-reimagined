@@ -14,84 +14,84 @@ var barrel_time: float = 0.0
 var warning_overlay: Node2D = null
 
 func _ready():
-    update_display()
-    warning_overlay = Node2D.new()
-    warning_overlay.z_index = 2
-    add_child(warning_overlay)
-    warning_overlay.draw.connect(_draw_warning)
-    
-    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
-        request_initial_state.rpc_id(1)
+	update_display()
+	warning_overlay = Node2D.new()
+	warning_overlay.z_index = 2
+	add_child(warning_overlay)
+	warning_overlay.draw.connect(_draw_warning)
+	
+	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+		request_initial_state.rpc_id(1)
 
 @rpc("any_peer", "call_remote")
 func request_initial_state():
-    if is_multiplayer_authority():
-        var sender = multiplayer.get_remote_sender_id()
-        sync_state.rpc_id(sender, position, health, max_health, burn_stacks)
+	if is_multiplayer_authority():
+		var sender = multiplayer.get_remote_sender_id()
+		sync_state.rpc_id(sender, position, health, max_health, burn_stacks)
 
 @rpc("authority", "call_remote")
 func sync_state(p_pos, p_health, p_max_health, p_burn_stacks):
-    position = p_pos
-    health = p_health
-    max_health = p_max_health
-    burn_stacks = p_burn_stacks
-    update_display()
+	position = p_pos
+	health = p_health
+	max_health = p_max_health
+	burn_stacks = p_burn_stacks
+	update_display()
 
 func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
-    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
-        return
-    last_hit_direction = hit_dir
-    health -= amount
-    update_display()
-    if sprite and health > 0:
-        var tween = create_tween()
-        tween.tween_property(sprite, "modulate", Color(2, 1.5, 1, 1), 0.05)
-        tween.tween_property(sprite, "modulate", Color(1, 1, 1, 1), 0.1)
+	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+		return
+	last_hit_direction = hit_dir
+	health -= amount
+	update_display()
+	if sprite and health > 0:
+		var tween = create_tween()
+		tween.tween_property(sprite, "modulate", Color(2, 1.5, 1, 1), 0.05)
+		tween.tween_property(sprite, "modulate", Color(1, 1, 1, 1), 0.1)
 
-    if health <= 0:
-        destroy()
+	if health <= 0:
+		destroy()
 
 func apply_explosion_crack(_ring: int):
-    # Chain reaction: explosions trigger this barrel too
-    destroy()
+	# Chain reaction: explosions trigger this barrel too
+	destroy()
 
 func add_burn_stack():
-    burn_stacks += 1
+	burn_stacks += 1
 func process_burn():
-    if burn_stacks > 0:
-        take_damage(burn_stacks)
-        burn_stacks = int(burn_stacks / 2.0)
+	if burn_stacks > 0:
+		take_damage(burn_stacks)
+		burn_stacks = int(burn_stacks / 2.0)
 
 func _draw_warning():
-    # Hazard symbol on barrel
-    var flash = 0.5 + 0.3 * sin(barrel_time * 4)
-    # Hazard stripes
-    warning_overlay.draw_line(Vector2(-20, -12), Vector2(-14, 12), Color(0.1, 0.1, 0.1, 0.4), 3)
-    warning_overlay.draw_line(Vector2(-10, -12), Vector2(-4, 12), Color(0.1, 0.1, 0.1, 0.4), 3)
-    warning_overlay.draw_line(Vector2(0, -12), Vector2(6, 12), Color(0.1, 0.1, 0.1, 0.4), 3)
-    warning_overlay.draw_line(Vector2(10, -12), Vector2(16, 12), Color(0.1, 0.1, 0.1, 0.4), 3)
-    # Explosion icon in center
-    warning_overlay.draw_circle(Vector2.ZERO, 6, Color(1.0, 0.3, 0.1, flash * 0.4))
-    warning_overlay.draw_circle(Vector2.ZERO, 3, Color(1.0, 0.6, 0.2, flash * 0.6))
+	# Hazard symbol on barrel
+	var flash = 0.5 + 0.3 * sin(barrel_time * 4)
+	# Hazard stripes
+	warning_overlay.draw_line(Vector2(-20, -12), Vector2(-14, 12), Color(0.1, 0.1, 0.1, 0.4), 3)
+	warning_overlay.draw_line(Vector2(-10, -12), Vector2(-4, 12), Color(0.1, 0.1, 0.1, 0.4), 3)
+	warning_overlay.draw_line(Vector2(0, -12), Vector2(6, 12), Color(0.1, 0.1, 0.1, 0.4), 3)
+	warning_overlay.draw_line(Vector2(10, -12), Vector2(16, 12), Color(0.1, 0.1, 0.1, 0.4), 3)
+	# Explosion icon in center
+	warning_overlay.draw_circle(Vector2.ZERO, 6, Color(1.0, 0.3, 0.1, flash * 0.4))
+	warning_overlay.draw_circle(Vector2.ZERO, 3, Color(1.0, 0.6, 0.2, flash * 0.6))
 
 func update_display():
-    if health_label:
-        health_label.text = str(health)
-        health_label.add_theme_color_override("font_color", Color(1, 1, 1))
-        health_label.add_theme_font_size_override("font_size", 14)
-    if sprite:
-        sprite.color = Color(0.25, 0.2, 0.18)  # Dark barrel color
+	if health_label:
+		health_label.text = str(health)
+		health_label.add_theme_color_override("font_color", Color(1, 1, 1))
+		health_label.add_theme_font_size_override("font_size", 14)
+	if sprite:
+		sprite.color = Color(0.25, 0.2, 0.18)  # Dark barrel color
 
 func destroy():
-    if is_dying: return
-    is_dying = true
+	if is_dying: return
+	is_dying = true
 
-    var manager = get_tree().get_first_node_in_group("game_manager")
-    if manager:
-        manager.add_score(5)
-        # BIG explosion
-        manager.do_oil_barrel_explosion(global_position, explosion_radius, explosion_damage)
-    queue_free()
+	var manager = get_tree().get_first_node_in_group("game_manager")
+	if manager:
+		manager.add_score(5)
+		# BIG explosion
+		manager.do_oil_barrel_explosion(global_position, explosion_radius, explosion_damage)
+	queue_free()
 
 func get_brick_value() -> int:
-    return 5
+	return 5

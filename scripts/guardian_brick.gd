@@ -9,68 +9,68 @@ var shield_max: int = 150
 @onready var health_label = $HealthLabel
 
 func _ready():
-    update_display()
-    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
-        request_initial_state.rpc_id(1)
+	update_display()
+	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+		request_initial_state.rpc_id(1)
 
 @rpc("any_peer", "call_remote")
 func request_initial_state():
-    if is_multiplayer_authority():
-        var sender = multiplayer.get_remote_sender_id()
-        sync_state.rpc_id(sender, position, health, max_health, shield_hp, shield_max)
+	if is_multiplayer_authority():
+		var sender = multiplayer.get_remote_sender_id()
+		sync_state.rpc_id(sender, position, health, max_health, shield_hp, shield_max)
 
 @rpc("authority", "call_remote")
 func sync_state(p_pos, p_health, p_max_health, p_shield_hp, p_shield_max):
-    position = p_pos
-    health = p_health
-    max_health = p_max_health
-    shield_hp = p_shield_hp
-    shield_max = p_shield_max
-    update_display()
+	position = p_pos
+	health = p_health
+	max_health = p_max_health
+	shield_hp = p_shield_hp
+	shield_max = p_shield_max
+	update_display()
 
 func take_damage(amount: int, _hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
-    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
-        return
-    # Shield absorbs first
-    if shield_hp > 0:
-        var absorbed = min(shield_hp, amount)
-        shield_hp -= absorbed
-        amount -= absorbed
-        update_display()
-        if amount <= 0:
-            if sprite:
-                var tween = create_tween()
-                tween.tween_property(sprite, "modulate", Color(1.5, 1.5, 2, 1), 0.05)
-                tween.tween_property(sprite, "modulate", Color(1, 1, 1, 1), 0.1)
-            return
+	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+		return
+	# Shield absorbs first
+	if shield_hp > 0:
+		var absorbed = min(shield_hp, amount)
+		shield_hp -= absorbed
+		amount -= absorbed
+		update_display()
+		if amount <= 0:
+			if sprite:
+				var tween = create_tween()
+				tween.tween_property(sprite, "modulate", Color(1.5, 1.5, 2, 1), 0.05)
+				tween.tween_property(sprite, "modulate", Color(1, 1, 1, 1), 0.1)
+			return
 
-    health -= amount
-    update_display()
-    if health <= 0:
-        destroy()
+	health -= amount
+	update_display()
+	if health <= 0:
+		destroy()
 
 func update_display():
-    if sprite:
-        if shield_hp > 0:
-            var ratio = float(shield_hp) / max(shield_max, 1)
-            sprite.color = Color(0.3, 0.5, 0.85).lerp(Color(0.2, 0.35, 0.65), 1.0 - ratio)
-        else:
-            sprite.color = Color(0.5, 0.5, 0.55)
-    if health_label:
-        if shield_hp > 0:
-            health_label.text = str(shield_hp)
-        else:
-            health_label.text = str(health)
-        health_label.add_theme_color_override("font_color", Color(1, 1, 1))
-        health_label.add_theme_font_size_override("font_size", 12)
+	if sprite:
+		if shield_hp > 0:
+			var ratio = float(shield_hp) / max(shield_max, 1)
+			sprite.color = Color(0.3, 0.5, 0.85).lerp(Color(0.2, 0.35, 0.65), 1.0 - ratio)
+		else:
+			sprite.color = Color(0.5, 0.5, 0.55)
+	if health_label:
+		if shield_hp > 0:
+			health_label.text = str(shield_hp)
+		else:
+			health_label.text = str(health)
+		health_label.add_theme_color_override("font_color", Color(1, 1, 1))
+		health_label.add_theme_font_size_override("font_size", 12)
 
 func apply_explosion_crack(_ring: int):
-    pass  # Guardians don't crack
+	pass  # Guardians don't crack
 
 func destroy():
-    var manager = get_tree().get_first_node_in_group("game_manager")
-    if manager:
-        manager.add_score(3)
-        if sprite:
-            manager.spawn_brick_particles(global_position, sprite.color)
-    queue_free()
+	var manager = get_tree().get_first_node_in_group("game_manager")
+	if manager:
+		manager.add_score(3)
+		if sprite:
+			manager.spawn_brick_particles(global_position, sprite.color)
+	queue_free()
