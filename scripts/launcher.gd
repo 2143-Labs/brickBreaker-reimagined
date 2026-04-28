@@ -2,8 +2,8 @@ extends Node2D
 
 enum LauncherType { DEFAULT, BOMB, RAILGUN, BURN, NUKE }
 
-var launcher_type: int = LauncherType.DEFAULT
-var aim_angle: float = -PI / 2.0  # pointing up by default
+@export var launcher_type: int = LauncherType.DEFAULT
+@export var aim_angle: float = -PI / 2.0  # pointing up by default
 var is_aiming: bool = false
 var anim_time: float = 0.0
 

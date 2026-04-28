@@ -23,6 +23,7 @@ config/features=PackedStringArray("4.6", "GL Compatibility")
 Progression="*res://scripts/progression.gd"
 MusicManager="*res://scripts/music_manager.gd"
 UITheme="*res://scripts/ui_theme.gd"
+MultiplayerManager="*res://scripts/multiplayer_manager.gd"
 
 [display]
 

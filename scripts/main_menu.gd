@@ -5,6 +5,7 @@ const STATS_PATH = "user://stats.save"
 
 @onready var title_label = $TitleLabel
 @onready var play_button = $PlayButton
+@onready var multiplayer_button = $MultiplayerButton
 @onready var resume_button = $ResumeButton
 @onready var stats_button = $TileGrid/StatsButton
 @onready var shop_button  = $TileGrid/ShopButton
@@ -38,6 +39,7 @@ func _ready():
 	check_save_game()
 
 	play_button.pressed.connect(_on_play)
+	multiplayer_button.pressed.connect(_on_multiplayer)
 	resume_button.pressed.connect(_on_resume)
 	stats_button.pressed.connect(_on_stats)
 	shop_button.pressed.connect(_on_shop)
@@ -49,6 +51,7 @@ func _ready():
 	stats_panel.visible = false
 
 	_style_primary_button(play_button, UITheme.LIME)
+	_style_primary_button(multiplayer_button, UITheme.AMBER)
 	_style_primary_button(resume_button, UITheme.CYAN)
 
 	_style_tile(stats_button, "STATS",      "lifetime",         UITheme.TEXT_MUTE, "%s" % _format_score(stats.get("high_score", 0)))
@@ -294,6 +297,9 @@ func _on_play():
 		DirAccess.remove_absolute("user://game_save.save")
 	increment_stat("total_games")
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+func _on_multiplayer():
+	get_tree().change_scene_to_file("res://scenes/multiplayer_menu.tscn")
 
 
 func _on_resume():

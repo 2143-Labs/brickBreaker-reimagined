@@ -29,6 +29,8 @@ func _process(delta):
         warning_overlay.queue_redraw()
 
 func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
+    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+        return
     last_hit_direction = hit_dir
     health -= amount
     update_display()
@@ -76,6 +78,14 @@ func destroy():
     is_dying = true
 
     var manager = get_tree().get_first_node_in_group("game_manager")
+    if manager:
+        manager.add_score(5)
+        # BIG explosion
+        manager.do_oil_barrel_explosion(global_position, explosion_radius, explosion_damage)
+    queue_free()
+
+func get_brick_value() -> int:
+    return 5group("game_manager")
     if manager:
         manager.add_score(5)
         # BIG explosion

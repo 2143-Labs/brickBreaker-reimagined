@@ -60,6 +60,8 @@ func update_size():
     shield_bar.offset_bottom = -half_h - 1
 
 func take_damage(amount: int, _hit_dir: Vector2 = Vector2.DOWN, is_special: bool = false):
+    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+        return
     # Bosses and elites take 50% less from bombs and railguns
     if is_special:
         amount = max(1, int(amount * 0.5))
@@ -194,6 +196,14 @@ func get_brick_value() -> int:
         return 50
     elif is_elite:
         return 8
+    elif max_health < 100:
+        return 5
+    elif max_health < 300:
+        return 10
+    elif max_health < 500:
+        return 20
+    else:
+        return 30    return 8
     elif max_health < 100:
         return 5
     elif max_health < 300:

@@ -12,6 +12,8 @@ func _ready():
     update_display()
 
 func take_damage(amount: int, _hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
+    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+        return
     # Shield absorbs first
     if shield_hp > 0:
         var absorbed = min(shield_hp, amount)

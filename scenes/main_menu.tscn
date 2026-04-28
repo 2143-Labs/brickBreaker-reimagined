@@ -140,13 +140,23 @@ theme_override_fonts/font = ExtResource("2")
 theme_override_font_sizes/font_size = 10
 theme_override_colors/font_color = Color(0.541, 0.576, 0.651, 1)
 
+[node name="MultiplayerButton" type="Button" parent="."]
+layout_mode = 1
+offset_left = 36.0
+offset_top = 455.0
+offset_right = 354.0
+offset_bottom = 495.0
+text = "▸ MULTIPLAYER"
+theme_override_fonts/font = ExtResource("2")
+theme_override_font_sizes/font_size = 12
+
 [node name="ResumeButton" type="Button" parent="."]
 visible = false
 layout_mode = 1
 offset_left = 36.0
-offset_top = 470.0
+offset_top = 505.0
 offset_right = 354.0
-offset_bottom = 510.0
+offset_bottom = 545.0
 text = "▸ RESUME RUN"
 theme_override_fonts/font = ExtResource("2")
 theme_override_font_sizes/font_size = 12
@@ -154,9 +164,9 @@ theme_override_font_sizes/font_size = 12
 [node name="TileGrid" type="Control" parent="."]
 layout_mode = 1
 offset_left = 24.0
-offset_top = 528.0
+offset_top = 560.0
 offset_right = 366.0
-offset_bottom = 696.0
+offset_bottom = 728.0
 
 [node name="StatsButton" type="Button" parent="TileGrid"]
 layout_mode = 0

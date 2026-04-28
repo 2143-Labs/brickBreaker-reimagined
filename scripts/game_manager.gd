@@ -158,6 +158,9 @@ var rainbow_spawn_chance: float = 0.05
 var rounds_since_rainbow: int = 0
 
 func _ready():
+	if MultiplayerManager.is_multiplayer:
+		setup_multiplayer()
+	
 	add_to_group("game_manager")
 	grid_start_x = arena_left + cell_width / 2.0
 	grid_start_y = arena_top + cell_height / 2.0
@@ -186,8 +189,9 @@ func _ready():
 	magazine.entrance_x = launch_point.x
 	magazine.set_ammo(ammo + bonus_ammo)
 
-	spawn_round_bricks_at_row0()
-	spawn_ammo_orbs_at_row0()
+	if not MultiplayerManager.is_multiplayer or multiplayer.is_server():
+		spawn_round_bricks_at_row0()
+		spawn_ammo_orbs_at_row0()
 
 	is_sliding = true
 	slide_progress = 0.0
@@ -611,10 +615,55 @@ func update_ammo_label_position():
 	ammo_label.offset_top = launch_point.y - 10
 	ammo_label.offset_bottom = launch_point.y + 15
 	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+func setup_multiplayer():
+	print("[NET] Setting up multiplayer. Server: ", multiplayer.is_server(), " ID: ", multiplayer.get_unique_id())
+	
+	# Add spawners for replicated nodes with explicit names
+	_add_spawner(brick_container, ["res://scenes/brick.tscn", "res://scenes/boss_brick.tscn", "res://scenes/guardian_brick.tscn", "res://scenes/rainbow_brick.tscn", "res://scenes/armored_brick.tscn", "res://scenes/triangle_brick.tscn", "res://scenes/diagonal_brick.tscn", "res://scenes/oil_barrel.tscn"], "BrickSpawner")
+	_add_spawner(ball_container, ["res://scenes/ball.tscn", "res://scenes/explosive_ball.tscn", "res://scenes/railgun_ball.tscn", "res://scenes/burn_ball.tscn"], "BallSpawner")
+	_add_spawner(orb_container, ["res://scenes/ammo_orb.tscn", "res://scenes/pickup.tscn"], "OrbSpawner")
+	
+	# Global state synchronization with explicit name
+	var sync = MultiplayerSynchronizer.new()
+	sync.name = "GlobalSynchronizer"
+	var config = SceneReplicationConfig.new()
+	config.add_property(".:current_round")
+	config.add_property(".:score")
+	config.add_property(".:ammo")
+	config.add_property(".:bonus_ammo")
+	config.add_property(".:game_active")
+	config.add_property(".:launch_point")
+	config.add_property("Launcher:aim_angle")
+	config.add_property("Launcher:launcher_type")
+	config.add_property("Launcher:position")
+	sync.replication_config = config
+	add_child(sync)
+	print("[NET] GlobalSynchronizer added")
+
+func _add_spawner(container: Node, scene_paths: Array, spawner_name: String):
+	# Check if already exists (to avoid duplicates if _ready is called multiple times)
+	if has_node(spawner_name):
+		return
+		
+	var spawner = MultiplayerSpawner.new()
+	spawner.name = spawner_name
+	for path in scene_paths:
+		spawner.add_spawnable_scene(path)
+	
+	# Use absolute path for reliability
+	spawner.spawn_path = container.get_path()
+	add_child(spawner)
+	print("[NET] Spawner ", spawner_name, " added for path: ", spawner.spawn_path)
 
 func _input(event):
 	if is_firing or not game_active or is_sliding or is_dropping:
 		return
+	
+	# Only allow input if it's our turn (multiplayer: server always has authority for now)
+	if MultiplayerManager.is_multiplayer and not multiplayer.is_server():
+		# For co-op, we could allow client input too, but it needs a different RPC flow
+		# For now, let's just make the client send the RPC
+		pass
 	if event is InputEventMouseButton or event is InputEventScreenTouch:
 		var pressed = event.pressed
 		var pos = event.position if event is InputEventMouseButton else event.position
@@ -624,9 +673,13 @@ func _input(event):
 		elif is_aiming:
 			is_aiming = false
 			var aim_pos = event.position if event is InputEventMouseButton else event.position
-			fire_direction = (aim_pos - launch_point).normalized()
-			if fire_direction.y < -0.1:
-				start_firing()
+			var dir = (aim_pos - launch_point).normalized()
+			if dir.y < -0.1:
+				if MultiplayerManager.is_multiplayer:
+					request_start_firing.rpc(dir)
+				else:
+					fire_direction = dir
+					start_firing()
 			aim_line.clear_points()
 			trajectory_preview.clear_points()
 	if event is InputEventMouseMotion or event is InputEventScreenDrag:
@@ -634,6 +687,13 @@ func _input(event):
 			var aim_pos = event.position if event is InputEventMouseMotion else event.position
 			last_aim_pos = aim_pos
 			update_aim_line(aim_pos)
+
+@rpc("any_peer", "call_local")
+func request_start_firing(dir: Vector2):
+	if not multiplayer.is_server(): return
+	if is_firing: return
+	fire_direction = dir
+	start_firing()
 
 func update_aim_line(target: Vector2):
 	var direction = (target - launch_point).normalized()
@@ -1041,6 +1101,8 @@ func on_railgun_death_finished():
 			end_round()
 
 func end_round():
+	if MultiplayerManager.is_multiplayer and not multiplayer.is_server():
+		return
 	is_firing = false
 	board_clear_played = false
 	current_round += 1
@@ -1136,6 +1198,8 @@ func spawn_guardians_if_needed():
 					brick_container.add_child(g)
 
 func spawn_round_content():
+	if MultiplayerManager.is_multiplayer and not multiplayer.is_server():
+		return
 	try_spawn_pending_elite()
 	try_spawn_boss()
 	try_spawn_elite()

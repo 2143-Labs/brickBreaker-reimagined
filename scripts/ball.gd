@@ -28,6 +28,9 @@ var trail_interval: float = 0.015  # spawn trail dot every 15ms
 func _ready():
 	add_to_group("balls")
 	queue_redraw()
+	
+	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+		set_physics_process(false)
 
 func get_ball_color() -> Color:
 	if applies_burn:

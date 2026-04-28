@@ -42,9 +42,9 @@ func get_next_tier_color(hp: int) -> Color:
 func get_brick_color(ratio: float) -> Color:
     var base = get_color_for_hp(max_health)
     return base.lightened((1.0 - ratio) * 0.25)
-
 func _ready():
     update_display()
+
     crack_overlay = Node2D.new()
     crack_overlay.z_index = 1
     add_child(crack_overlay)
@@ -78,6 +78,8 @@ func _process(_delta):
         fire_overlay.visible = false
 
 func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
+    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+        return
     last_hit_direction = hit_dir
 
     # Stacking damage bonus
