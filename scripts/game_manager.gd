@@ -756,30 +756,25 @@ func request_nuke():
 func do_nuke():
 	# Server broadcasts nuke effects to all
 	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		_do_nuke_rpc.rpc()
+		play_vfx.rpc("nuke", Vector2(195, arena_top + (arena_bottom - arena_top) / 2))
 	else:
-		_do_nuke_rpc()
-
-@rpc("authority", "call_local", "reliable")
-func _do_nuke_rpc():
-	sound_manager.play_nuke()
-	add_shake(12.0)
-	spawn_modifier_popup("☢ NUKE ☢", Color(1.0, 0.9, 0.2))
+		play_vfx("nuke", Vector2(195, arena_top + (arena_bottom - arena_top) / 2))
 
 	# Destroy all bricks with big VFX
 	var bricks = brick_container.get_children().duplicate()
 	for brick in bricks:
 		if is_instance_valid(brick) and brick is Node2D:
 			if brick.has_node("Sprite"):
-				spawn_brick_particles(brick.global_position, brick.get_node("Sprite").color)
+				if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+					play_vfx.rpc("brick_particles", brick.global_position, {"color": brick.get_node("Sprite").color, "hit_dir": Vector2.DOWN})
+				else:
+					play_vfx("brick_particles", brick.global_position, {"color": brick.get_node("Sprite").color, "hit_dir": Vector2.DOWN})
+			
 			# Only the server manages score and physical removal
 			if multiplayer.is_server() or not MultiplayerManager.is_multiplayer:
 				if brick.has_method("get_brick_value"):
 					add_score(brick.get_brick_value())
 				brick.queue_free()
-
-	# Big center explosion VFX
-	spawn_explosion_vfx(Vector2(195, arena_top + (arena_bottom - arena_top) / 2), 200)
 
 func create_preview_balls():
 	if preview_ball_1: preview_ball_1.queue_free()
@@ -1083,11 +1078,48 @@ func do_launch_ball(p_id: int, dir: Vector2):
 		sync_magazine_fire(p_id)
 # ---- EXPLOSION ----
 
+@rpc("authority", "call_local", "unreliable")
+func play_vfx(vfx_type: String, pos: Vector2, data: Dictionary = {}):
+	match vfx_type:
+		"explosion":
+			sound_manager.play_explode()
+			add_shake(8.0)
+			spawn_explosion_vfx(pos, data.get("radius", 110.0))
+		"oil_barrel":
+			sound_manager.play_explode()
+			add_shake(10.0)
+			spawn_oil_barrel_vfx(pos, data.get("radius", 160.0))
+		"railgun_trail":
+			spawn_railgun_trail_vfx(pos)
+		"tunnel_hole":
+			spawn_tunnel_hole_vfx(pos)
+		"purple_spray":
+			spawn_purple_spray_vfx(pos)
+		"ammo_popup":
+			spawn_ammo_popup_vfx(data.get("count", 1))
+		"modifier_popup":
+			spawn_modifier_popup_vfx(data.get("text", ""), data.get("color", Color.WHITE))
+		"score_popup":
+			spawn_score_popup_vfx(pos, data.get("points", 1))
+		"brick_particles":
+			spawn_brick_particles_vfx(pos, data.get("color", Color.WHITE), data.get("hit_dir", Vector2.DOWN))
+		"board_clear":
+			play_board_clear_vfx()
+		"screen_flash":
+			spawn_screen_flash_vfx()
+		"combo_text":
+			spawn_combo_text_vfx(data.get("combo", 1))
+		"nuke":
+			sound_manager.play_nuke()
+			add_shake(12.0)
+			spawn_modifier_popup_vfx("☢ NUKE ☢", Color(1.0, 0.9, 0.2))
+			spawn_explosion_vfx(pos, 200.0)
+
 func do_explosion(center: Vector2, radius: float):
 	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		_do_explosion_vfx_rpc.rpc(center, radius)
+		play_vfx.rpc("explosion", center, {"radius": radius})
 	else:
-		_do_explosion_vfx_rpc(center, radius)
+		play_vfx("explosion", center, {"radius": radius})
 		
 	var ball_count = ammo + bonus_ammo
 	var inner_radius = radius * 0.4
@@ -1109,12 +1141,6 @@ func do_explosion(center: Vector2, radius: float):
 				brick.take_damage(outer_damage, Vector2.DOWN, true)
 				if brick.has_method("apply_explosion_crack"):
 					brick.apply_explosion_crack(2)
-
-@rpc("authority", "call_local")
-func _do_explosion_vfx_rpc(center: Vector2, radius: float):
-	sound_manager.play_explode()
-	add_shake(8.0)
-	spawn_explosion_vfx(center, radius)
 
 func spawn_explosion_vfx(center: Vector2, radius: float):
 	var explosion = Node2D.new()
@@ -1142,9 +1168,9 @@ func spawn_explosion_vfx(center: Vector2, radius: float):
 
 func do_oil_barrel_explosion(center: Vector2, radius: float, base_damage: int):
 	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		_do_oil_barrel_vfx_rpc.rpc(center, radius)
+		play_vfx.rpc("oil_barrel", center, {"radius": radius})
 	else:
-		_do_oil_barrel_vfx_rpc(center, radius)
+		play_vfx("oil_barrel", center, {"radius": radius})
 		
 	var inner_radius = radius * 0.3
 	for brick in brick_container.get_children():
@@ -1165,10 +1191,7 @@ func do_oil_barrel_explosion(center: Vector2, radius: float, base_damage: int):
 			if brick.has_method("apply_explosion_crack"):
 				brick.apply_explosion_crack(0 if dist < inner_radius else 1 if dist < radius * 0.6 else 2)
 
-@rpc("authority", "call_local")
-func _do_oil_barrel_vfx_rpc(center: Vector2, radius: float):
-	sound_manager.play_explode()
-	add_shake(10.0)
+func spawn_oil_barrel_vfx(center: Vector2, radius: float):
 	var explosion = Node2D.new()
 	explosion.position = center
 	particle_container.add_child(explosion)
@@ -1205,16 +1228,15 @@ func _do_oil_barrel_vfx_rpc(center: Vector2, radius: float):
 		if is_instance_valid(explosion):
 			explosion.queue_free()
 	)
-	spawn_screen_flash()
+	spawn_screen_flash_vfx()
 
 func spawn_railgun_trail(pos: Vector2):
 	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		_spawn_railgun_trail_rpc.rpc(pos)
+		play_vfx.rpc("railgun_trail", pos)
 	else:
-		_spawn_railgun_trail_rpc(pos)
+		play_vfx("railgun_trail", pos)
 
-@rpc("authority", "call_local")
-func _spawn_railgun_trail_rpc(pos: Vector2):
+func spawn_railgun_trail_vfx(pos: Vector2):
 	var trail = Node2D.new()
 	trail.position = pos
 	particle_container.add_child(trail)
@@ -1237,12 +1259,11 @@ func _spawn_railgun_trail_rpc(pos: Vector2):
 
 func spawn_tunnel_hole(hit_point: Vector2):
 	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		_spawn_tunnel_hole_rpc.rpc(hit_point)
+		play_vfx.rpc("tunnel_hole", hit_point)
 	else:
-		_spawn_tunnel_hole_rpc(hit_point)
+		play_vfx("tunnel_hole", hit_point)
 
-@rpc("authority", "call_local")
-func _spawn_tunnel_hole_rpc(pos: Vector2):
+func spawn_tunnel_hole_vfx(pos: Vector2):
 	var hole = Node2D.new()
 	hole.position = pos
 	particle_container.add_child(hole)
@@ -1258,12 +1279,11 @@ func _spawn_tunnel_hole_rpc(pos: Vector2):
 
 func spawn_purple_spray(hit_point: Vector2):
 	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		_spawn_purple_spray_rpc.rpc(hit_point)
+		play_vfx.rpc("purple_spray", hit_point)
 	else:
-		_spawn_purple_spray_rpc(hit_point)
+		play_vfx("purple_spray", hit_point)
 
-@rpc("authority", "call_local")
-func _spawn_purple_spray_rpc(pos: Vector2):
+func spawn_purple_spray_vfx(pos: Vector2):
 	for i in range(8):
 		var p = ColorRect.new()
 		var s = randf_range(2, 5)
@@ -1281,6 +1301,271 @@ func _spawn_purple_spray_rpc(pos: Vector2):
 		tween.chain().tween_callback(p.queue_free)
 	add_shake(2.0)
 
+# ---- HUD & SCORE ----
+
+func spawn_ammo_popup(count: int):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		play_vfx.rpc("ammo_popup", launch_point_1, {"count": count})
+	else:
+		play_vfx("ammo_popup", launch_point_1, {"count": count})
+
+func spawn_ammo_popup_vfx(count: int):
+	for i in range(count):
+		magazine.add_ball_plop()
+		if magazine_2: magazine_2.add_ball_plop()
+		
+	var tier = min(count, 5)
+	var label = Label.new()
+	label.text = "+%d" % count
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.position = Vector2(launch_point_1.x - 40, launch_point_1.y - 30)
+	var sizes = [16, 22, 28, 36, 44]
+	label.add_theme_font_size_override("font_size", sizes[tier - 1])
+	var colors = [Color(0.4, 0.8, 0.5), Color(0.3, 0.9, 0.4), Color(0.95, 0.8, 0.2), Color(1.0, 0.5, 0.15), Color(1.0, 0.2, 0.3)]
+	label.add_theme_color_override("font_color", colors[tier - 1])
+	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.4))
+	label.add_theme_constant_override("shadow_offset_x", 1)
+	label.add_theme_constant_override("shadow_offset_y", 1)
+	add_child(label)
+	var float_dist = 40.0 + tier * 10.0
+	var duration = 1.0 + tier * 0.15
+	var tween = label.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - float_dist, duration).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	tween.tween_property(label, "modulate:a", 0.0, duration).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	if tier >= 3:
+		label.scale = Vector2(1.3, 1.3)
+		tween.tween_property(label, "scale", Vector2(1.0, 1.0), 0.3).set_ease(Tween.EASE_OUT)
+	tween.chain().tween_callback(label.queue_free)
+
+func spawn_modifier_popup(text: String, color: Color):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		play_vfx.rpc("modifier_popup", launch_point_1, {"text": text, "color": color})
+	else:
+		play_vfx("modifier_popup", launch_point_1, {"text": text, "color": color})
+
+func spawn_modifier_popup_vfx(text: String, color: Color):
+	var label = Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.position = Vector2(155, launch_point_1.y - 50)
+	label.add_theme_font_size_override("font_size", 24)
+	label.add_theme_color_override("font_color", color)
+	add_child(label)
+	var tween = label.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 40, 1.2).set_ease(Tween.EASE_OUT)
+	tween.tween_property(label, "modulate:a", 0.0, 1.2).set_ease(Tween.EASE_IN)
+	tween.chain().tween_callback(label.queue_free)
+
+func spawn_score_popup(pos: Vector2, points: int):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		play_vfx.rpc("score_popup", pos, {"points": points})
+	else:
+		play_vfx("score_popup", pos, {"points": points})
+
+func spawn_score_popup_vfx(pos: Vector2, points: int):
+	var label = Label.new()
+	var display_points = points * max(1, combo_count)
+	label.text = "+%d" % display_points
+	label.position = pos + Vector2(-15, -10)
+	label.add_theme_font_size_override("font_size", 11 + min(combo_count, 5) * 2)
+
+	# Color based on combo
+	var col: Color
+	if combo_count >= 7: col = Color(1.0, 0.3, 0.2)
+	elif combo_count >= 5: col = Color(1.0, 0.5, 0.15)
+	elif combo_count >= 3: col = Color(0.95, 0.8, 0.2)
+	else: col = Color(1, 1, 1, 0.8)
+	label.add_theme_color_override("font_color", col)
+
+	add_child(label)
+	var tween = label.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 35, 0.7).set_ease(Tween.EASE_OUT)
+	tween.tween_property(label, "modulate:a", 0.0, 0.7).set_ease(Tween.EASE_IN)
+	tween.chain().tween_callback(label.queue_free)
+
+func spawn_brick_particles_directional(pos: Vector2, color: Color, hit_dir: Vector2):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		play_vfx.rpc("brick_particles", pos, {"color": color, "hit_dir": hit_dir})
+	else:
+		play_vfx("brick_particles", pos, {"color": color, "hit_dir": hit_dir})
+
+func spawn_brick_particles_vfx(pos: Vector2, color: Color, hit_dir: Vector2):
+	add_shake(3.0)
+	if not railgun_active:
+		sound_manager.play_destroy()
+	var particles = Node2D.new()
+	particles.position = pos
+	particle_container.add_child(particles)
+
+	for i in range(10):
+		var p = ColorRect.new()
+		var s = randf_range(2, 7)
+		p.size = Vector2(s, s)
+		p.position = Vector2(-s/2, -s/2)
+		p.color = color.lightened(randf_range(-0.1, 0.15))
+		particles.add_child(p)
+
+		# Directional: particles fly mostly in the hit direction with spread
+		var base_angle = hit_dir.angle()
+		var spread = randf_range(-0.8, 0.8)
+		var angle = base_angle + spread
+		var dist = randf_range(15, 55)
+		var target_pos = Vector2(cos(angle) * dist, sin(angle) * dist)
+
+		var tween = p.create_tween()
+		tween.set_parallel(true)
+		tween.tween_property(p, "position", target_pos, 0.35).set_ease(Tween.EASE_OUT)
+		tween.tween_property(p, "modulate:a", 0.0, 0.35)
+		# Slight rotation for debris feel
+		tween.tween_property(p, "rotation", randf_range(-2, 2), 0.35)
+		tween.chain().tween_callback(p.queue_free)
+
+	get_tree().create_timer(0.4).timeout.connect(func():
+		if is_instance_valid(particles):
+			particles.queue_free()
+	)
+
+func spawn_brick_particles(pos: Vector2, color: Color):
+	spawn_brick_particles_directional(pos, color, Vector2.DOWN)
+
+func play_board_clear():
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		play_vfx.rpc("board_clear", Vector2.ZERO)
+	else:
+		play_vfx("board_clear", Vector2.ZERO)
+
+func play_board_clear_vfx():
+	var rect = ColorRect.new()
+	var mat = ShaderMaterial.new()
+	mat.shader = BOARD_CLEAR_SHADER
+	mat.set_shader_parameter("progress", 0.0)
+	mat.set_shader_parameter("center", Vector2(0.5, 0.5))
+	rect.material = mat
+	rect.color = Color(1, 1, 1, 1)
+	rect.anchor_right = 1.0
+	rect.anchor_bottom = 1.0
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rect.z_index = 100
+	$HUD.add_child(rect)
+	await get_tree().process_frame
+	var sz = rect.size
+	if sz.x > 0 and sz.y > 0:
+		mat.set_shader_parameter("aspect", sz.x / sz.y)
+	
+	add_shake(6.0)
+	if sound_manager:
+		sound_manager.play_combo(8)
+
+	var tween = create_tween()
+	tween.tween_method(func(p: float):
+		if is_instance_valid(rect):
+			mat.set_shader_parameter("progress", p)
+	, 0.0, 1.0, 1.1)
+	tween.tween_callback(rect.queue_free)
+
+	# Big celebratory text
+	var label = Label.new()
+	label.text = "BOARD CLEAR!"
+	label.add_theme_font_size_override("font_size", 32)
+	label.add_theme_color_override("font_color", Color(1, 1, 1))
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	label.add_theme_constant_override("outline_size", 6)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	label.clip_text = false
+	label.anchor_left = 0.0
+	label.anchor_right = 1.0
+	label.anchor_top = 0.4
+	label.anchor_bottom = 0.4
+	label.offset_left = 0
+	label.offset_right = 0
+	label.offset_top = -30
+	label.offset_bottom = 30
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.z_index = 101
+	label.modulate.a = 0.0
+	$HUD.add_child(label)
+	# Pivot at center so the scale tween doesn't push it off-screen
+	label.pivot_offset = label.size * 0.5
+	var ltween = create_tween()
+	ltween.set_parallel(true)
+	ltween.tween_property(label, "modulate:a", 1.0, 0.15)
+	ltween.tween_property(label, "scale", Vector2(1.3, 1.3), 0.7).from(Vector2(0.6, 0.6)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	ltween.chain().tween_property(label, "modulate:a", 0.0, 0.4)
+	ltween.chain().tween_callback(label.queue_free)
+
+func spawn_screen_flash():
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		play_vfx.rpc("screen_flash", Vector2.ZERO)
+	else:
+		play_vfx("screen_flash", Vector2.ZERO)
+
+func spawn_screen_flash_vfx():
+	var flash = ColorRect.new()
+	flash.color = Color(1, 1, 1, 0.15)
+	flash.anchors_preset = 15
+	flash.anchor_right = 1.0
+	flash.anchor_bottom = 1.0
+	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$HUD.add_child(flash)
+	var tween = flash.create_tween()
+	tween.tween_property(flash, "color:a", 0.0, 0.15)
+	tween.tween_callback(flash.queue_free)
+
+func spawn_combo_text(combo: int):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		play_vfx.rpc("combo_text", Vector2.ZERO, {"combo": combo})
+	else:
+		play_vfx("combo_text", Vector2.ZERO, {"combo": combo})
+
+func spawn_combo_text_vfx(combo: int):
+	# Reuse single label — remove old one
+	if combo_label and is_instance_valid(combo_label):
+		combo_label.queue_free()
+
+	combo_label = Label.new()
+	if combo >= 10:
+		combo_label.text = "ULTRA x%d!" % combo
+	elif combo >= 7:
+		combo_label.text = "MEGA x%d!" % combo
+	elif combo >= 5:
+		combo_label.text = "COMBO x%d!" % combo
+	else:
+		combo_label.text = "x%d" % combo
+	combo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	combo_label.position = Vector2(120, 250)
+
+	var size = min(18 + combo * 3, 42)
+	combo_label.add_theme_font_size_override("font_size", size)
+
+	var col: Color
+	if combo >= 10: col = Color(1.0, 0.2, 0.3)
+	elif combo >= 7: col = Color(1.0, 0.5, 0.15)
+	elif combo >= 5: col = Color(0.95, 0.8, 0.2)
+	else: col = Color(1, 1, 1)
+	combo_label.add_theme_color_override("font_color", col)
+	combo_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
+	combo_label.add_theme_constant_override("shadow_offset_x", 2)
+	combo_label.add_theme_constant_override("shadow_offset_y", 2)
+
+	add_child(combo_label)
+
+	var tween = combo_label.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(combo_label, "position:y", combo_label.position.y - 30, 0.8).set_ease(Tween.EASE_OUT)
+	tween.tween_property(combo_label, "modulate:a", 0.0, 0.8).set_ease(Tween.EASE_IN)
+	if combo >= 5:
+		combo_label.scale = Vector2(1.4, 1.4)
+		tween.tween_property(combo_label, "scale", Vector2(1.0, 1.0), 0.2).set_ease(Tween.EASE_OUT)
+	tween.chain().tween_callback(func():
+		if is_instance_valid(combo_label):
+			combo_label.queue_free()
+			combo_label = null
+	)
 # ---- PICKUPS & RAINBOW ----
 
 func collect_pickup(pickup_type: int):
@@ -1963,91 +2248,6 @@ func get_occupied_cells() -> Array:
 
 # ---- HUD & SCORE ----
 
-func spawn_ammo_popup(count: int):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		_spawn_ammo_popup_rpc.rpc(count)
-	else:
-		_spawn_ammo_popup_rpc(count)
-
-@rpc("authority", "call_local")
-func _spawn_ammo_popup_rpc(count: int):
-	for i in range(count):
-		magazine.add_ball_plop()
-		if magazine_2: magazine_2.add_ball_plop()
-		
-	var tier = min(count, 5)
-	var label = Label.new()
-	label.text = "+%d" % count
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.position = Vector2(launch_point_1.x - 40, launch_point_1.y - 30)
-	var sizes = [16, 22, 28, 36, 44]
-	label.add_theme_font_size_override("font_size", sizes[tier - 1])
-	var colors = [Color(0.4, 0.8, 0.5), Color(0.3, 0.9, 0.4), Color(0.95, 0.8, 0.2), Color(1.0, 0.5, 0.15), Color(1.0, 0.2, 0.3)]
-	label.add_theme_color_override("font_color", colors[tier - 1])
-	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.4))
-	label.add_theme_constant_override("shadow_offset_x", 1)
-	label.add_theme_constant_override("shadow_offset_y", 1)
-	add_child(label)
-	var float_dist = 40.0 + tier * 10.0
-	var duration = 1.0 + tier * 0.15
-	var tween = label.create_tween()
-	tween.set_parallel(true)
-	tween.tween_property(label, "position:y", label.position.y - float_dist, duration).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
-	tween.tween_property(label, "modulate:a", 0.0, duration).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-	if tier >= 3:
-		label.scale = Vector2(1.3, 1.3)
-		tween.tween_property(label, "scale", Vector2(1.0, 1.0), 0.3).set_ease(Tween.EASE_OUT)
-	tween.chain().tween_callback(label.queue_free)
-
-func spawn_modifier_popup(text: String, color: Color):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		_spawn_modifier_popup_rpc.rpc(text, color)
-	else:
-		_spawn_modifier_popup_rpc(text, color)
-
-@rpc("authority", "call_local")
-func _spawn_modifier_popup_rpc(text: String, color: Color):
-	var label = Label.new()
-	label.text = text
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.position = Vector2(155, launch_point_1.y - 50)
-	label.add_theme_font_size_override("font_size", 24)
-	label.add_theme_color_override("font_color", color)
-	add_child(label)
-	var tween = label.create_tween()
-	tween.set_parallel(true)
-	tween.tween_property(label, "position:y", label.position.y - 40, 1.2).set_ease(Tween.EASE_OUT)
-	tween.tween_property(label, "modulate:a", 0.0, 1.2).set_ease(Tween.EASE_IN)
-	tween.chain().tween_callback(label.queue_free)
-
-func spawn_score_popup(pos: Vector2, points: int):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		_spawn_score_popup_rpc.rpc(pos, points)
-	else:
-		_spawn_score_popup_rpc(pos, points)
-
-@rpc("authority", "call_local", "unreliable")
-func _spawn_score_popup_rpc(pos: Vector2, points: int):
-	var label = Label.new()
-	var display_points = points * max(1, combo_count)
-	label.text = "+%d" % display_points
-	label.position = pos + Vector2(-15, -10)
-	label.add_theme_font_size_override("font_size", 11 + min(combo_count, 5) * 2)
-
-	# Color based on combo
-	var col: Color
-	if combo_count >= 7: col = Color(1.0, 0.3, 0.2)
-	elif combo_count >= 5: col = Color(1.0, 0.5, 0.15)
-	elif combo_count >= 3: col = Color(0.95, 0.8, 0.2)
-	else: col = Color(1, 1, 1, 0.8)
-	label.add_theme_color_override("font_color", col)
-
-	add_child(label)
-	var tween = label.create_tween()
-	tween.set_parallel(true)
-	tween.tween_property(label, "position:y", label.position.y - 35, 0.7).set_ease(Tween.EASE_OUT)
-	tween.tween_property(label, "modulate:a", 0.0, 0.7).set_ease(Tween.EASE_IN)
-	tween.chain().tween_callback(label.queue_free)
 
 func game_over():
 	game_active = false
@@ -2133,52 +2333,6 @@ func load_high_score():
 			high_score = file.get_var()
 			file.close()
 
-func spawn_brick_particles_directional(pos: Vector2, color: Color, hit_dir: Vector2):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		_spawn_brick_particles_rpc.rpc(pos, color, hit_dir)
-	else:
-		_spawn_brick_particles_rpc(pos, color, hit_dir)
-
-@rpc("authority", "call_local", "unreliable")
-func _spawn_brick_particles_rpc(pos: Vector2, color: Color, hit_dir: Vector2):
-	add_shake(3.0)
-	if not railgun_active:
-		sound_manager.play_destroy()
-	var particles = Node2D.new()
-	particles.position = pos
-	particle_container.add_child(particles)
-
-	for i in range(10):
-		var p = ColorRect.new()
-		var s = randf_range(2, 7)
-		p.size = Vector2(s, s)
-		p.position = Vector2(-s/2, -s/2)
-		p.color = color.lightened(randf_range(-0.1, 0.15))
-		particles.add_child(p)
-
-		# Directional: particles fly mostly in the hit direction with spread
-		var base_angle = hit_dir.angle()
-		var spread = randf_range(-0.8, 0.8)
-		var angle = base_angle + spread
-		var dist = randf_range(15, 55)
-		var target_pos = Vector2(cos(angle) * dist, sin(angle) * dist)
-
-		var tween = p.create_tween()
-		tween.set_parallel(true)
-		tween.tween_property(p, "position", target_pos, 0.35).set_ease(Tween.EASE_OUT)
-		tween.tween_property(p, "modulate:a", 0.0, 0.35)
-		# Slight rotation for debris feel
-		tween.tween_property(p, "rotation", randf_range(-2, 2), 0.35)
-		tween.chain().tween_callback(p.queue_free)
-
-	get_tree().create_timer(0.4).timeout.connect(func():
-		if is_instance_valid(particles):
-			particles.queue_free()
-	)
-
-func spawn_brick_particles(pos: Vector2, color: Color):
-	spawn_brick_particles_directional(pos, color, Vector2.DOWN)
-
 func on_brick_hit():
 	if combo_count >= 2:
 		combo_slow_timer = 0.1
@@ -2237,74 +2391,6 @@ func _check_board_clear_visual():
 			check_round_end()
 	)
 
-func play_board_clear():
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		_play_board_clear_rpc.rpc()
-	else:
-		_play_board_clear_rpc()
-
-@rpc("authority", "call_local")
-func _play_board_clear_rpc():
-	var rect = ColorRect.new()
-	var mat = ShaderMaterial.new()
-	mat.shader = BOARD_CLEAR_SHADER
-	mat.set_shader_parameter("progress", 0.0)
-	mat.set_shader_parameter("center", Vector2(0.5, 0.5))
-	rect.material = mat
-	rect.color = Color(1, 1, 1, 1)
-	rect.anchor_right = 1.0
-	rect.anchor_bottom = 1.0
-	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	rect.z_index = 100
-	$HUD.add_child(rect)
-	await get_tree().process_frame
-	var sz = rect.size
-	if sz.x > 0 and sz.y > 0:
-		mat.set_shader_parameter("aspect", sz.x / sz.y)
-	
-	add_shake(6.0)
-	if sound_manager:
-		sound_manager.play_combo(8)
-
-	var tween = create_tween()
-	tween.tween_method(func(p: float):
-		if is_instance_valid(rect):
-			mat.set_shader_parameter("progress", p)
-	, 0.0, 1.0, 1.1)
-	tween.tween_callback(rect.queue_free)
-
-	# Big celebratory text
-	var label = Label.new()
-	label.text = "BOARD CLEAR!"
-	label.add_theme_font_size_override("font_size", 32)
-	label.add_theme_color_override("font_color", Color(1, 1, 1))
-	label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	label.add_theme_constant_override("outline_size", 6)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	label.clip_text = false
-	label.anchor_left = 0.0
-	label.anchor_right = 1.0
-	label.anchor_top = 0.4
-	label.anchor_bottom = 0.4
-	label.offset_left = 0
-	label.offset_right = 0
-	label.offset_top = -30
-	label.offset_bottom = 30
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	label.z_index = 101
-	label.modulate.a = 0.0
-	$HUD.add_child(label)
-	# Pivot at center so the scale tween doesn't push it off-screen
-	label.pivot_offset = label.size * 0.5
-	var ltween = create_tween()
-	ltween.set_parallel(true)
-	ltween.tween_property(label, "modulate:a", 1.0, 0.15)
-	ltween.tween_property(label, "scale", Vector2(1.3, 1.3), 0.7).from(Vector2(0.6, 0.6)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	ltween.chain().tween_property(label, "modulate:a", 0.0, 0.4)
-	ltween.chain().tween_callback(label.queue_free)
-
 func check_early_round_end():
 	# Only consider early end while firing
 	if not p1_fired and not p2_fired:
@@ -2324,25 +2410,6 @@ func check_early_round_end():
 		p1_balls_to_spawn = 0
 		p2_balls_to_spawn = 0
 		end_round()
-
-func spawn_screen_flash():
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		_spawn_screen_flash_rpc.rpc()
-	else:
-		_spawn_screen_flash_rpc()
-
-@rpc("authority", "call_local")
-func _spawn_screen_flash_rpc():
-	var flash = ColorRect.new()
-	flash.color = Color(1, 1, 1, 0.15)
-	flash.anchors_preset = 15
-	flash.anchor_right = 1.0
-	flash.anchor_bottom = 1.0
-	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	$HUD.add_child(flash)
-	var tween = flash.create_tween()
-	tween.tween_property(flash, "color:a", 0.0, 0.15)
-	tween.tween_callback(flash.queue_free)
 
 func _draw_combo_bar():
 	if combo_count < 2:
@@ -2379,55 +2446,4 @@ func _draw_combo_bar():
 	# Glow behind text
 	combo_bar.draw_string(ThemeDB.fallback_font, Vector2(text_x + 1, text_y + 1), text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, Color(0, 0, 0, 0.4))
 	combo_bar.draw_string(ThemeDB.fallback_font, Vector2(text_x, text_y), text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, bar_color)
-
-func spawn_combo_text(combo: int):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		_spawn_combo_text_rpc.rpc(combo)
-	else:
-		_spawn_combo_text_rpc(combo)
-
-@rpc("authority", "call_local", "unreliable")
-func _spawn_combo_text_rpc(combo: int):
-	# Reuse single label — remove old one
-	if combo_label and is_instance_valid(combo_label):
-		combo_label.queue_free()
-
-	combo_label = Label.new()
-	if combo >= 10:
-		combo_label.text = "ULTRA x%d!" % combo
-	elif combo >= 7:
-		combo_label.text = "MEGA x%d!" % combo
-	elif combo >= 5:
-		combo_label.text = "COMBO x%d!" % combo
-	else:
-		combo_label.text = "x%d" % combo
-	combo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	combo_label.position = Vector2(120, 250)
-
-	var size = min(18 + combo * 3, 42)
-	combo_label.add_theme_font_size_override("font_size", size)
-
-	var col: Color
-	if combo >= 10: col = Color(1.0, 0.2, 0.3)
-	elif combo >= 7: col = Color(1.0, 0.5, 0.15)
-	elif combo >= 5: col = Color(0.95, 0.8, 0.2)
-	else: col = Color(1, 1, 1)
-	combo_label.add_theme_color_override("font_color", col)
-	combo_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
-	combo_label.add_theme_constant_override("shadow_offset_x", 2)
-	combo_label.add_theme_constant_override("shadow_offset_y", 2)
-
-	add_child(combo_label)
-
-	var tween = combo_label.create_tween()
-	tween.set_parallel(true)
-	tween.tween_property(combo_label, "position:y", combo_label.position.y - 30, 0.8).set_ease(Tween.EASE_OUT)
-	tween.tween_property(combo_label, "modulate:a", 0.0, 0.8).set_ease(Tween.EASE_IN)
-	if combo >= 5:
-		combo_label.scale = Vector2(1.4, 1.4)
-		tween.tween_property(combo_label, "scale", Vector2(1.0, 1.0), 0.2).set_ease(Tween.EASE_OUT)
-	tween.chain().tween_callback(func():
-		if is_instance_valid(combo_label):
-			combo_label.queue_free()
-			combo_label = null
-	)
+		

@@ -24,6 +24,22 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 color = Color(0.075, 0.09, 0.125, 1)
 
+
+[node name="BrickSpawner" type="MultiplayerSpawner" parent="."]
+_spawnable_scenes = PackedStringArray("res://scenes/brick.tscn", "res://scenes/boss_brick.tscn", "res://scenes/guardian_brick.tscn", "res://scenes/rainbow_brick.tscn", "res://scenes/armored_brick.tscn", "res://scenes/triangle_brick.tscn", "res://scenes/diagonal_brick.tscn", "res://scenes/oil_barrel.tscn")
+spawn_path = NodePath("../BrickContainer")
+spawn_limit = 0
+
+[node name="BallSpawner" type="MultiplayerSpawner" parent="."]
+_spawnable_scenes = PackedStringArray("res://scenes/ball.tscn", "res://scenes/explosive_ball.tscn", "res://scenes/railgun_ball.tscn", "res://scenes/burn_ball.tscn")
+spawn_path = NodePath("../BallContainer")
+spawn_limit = 0
+
+[node name="OrbSpawner" type="MultiplayerSpawner" parent="."]
+_spawnable_scenes = PackedStringArray("res://scenes/ammo_orb.tscn", "res://scenes/pickup.tscn")
+spawn_path = NodePath("../OrbContainer")
+spawn_limit = 0
+
 [node name="Arena" type="Node2D" parent="."]
 
 [node name="LeftWall" type="StaticBody2D" parent="Arena"]
