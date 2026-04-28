@@ -7,7 +7,7 @@ signal player_disconnected(id)
 signal game_started
 
 var peer = ENetMultiplayerPeer.new()
-const DEFAULT_PORT = 4242
+const DEFAULT_PORT = 7777
 const DEFAULT_IP = "127.0.0.1"
 
 var is_multiplayer: bool = false
