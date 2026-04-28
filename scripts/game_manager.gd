@@ -44,6 +44,7 @@ const SAVE_PATH = "user://highscore.save"
 
 var settings_menu: Node = null
 
+# Powerup UI
 @onready var explosive_button = $HUD/PowerupBar/ExplosiveButton
 @onready var explosive_name_label = $HUD/PowerupBar/ExplosiveButton/ExplosiveLabel
 @onready var explosive_cooldown_label = $HUD/PowerupBar/ExplosiveButton/ExplosiveCooldown
@@ -96,11 +97,9 @@ var is_aiming: bool = false
 var last_aim_pos: Vector2 = Vector2.ZERO
 var is_firing: bool = false
 
-
 var railgun_deaths_pending: int = 0
 var railgun_total_kills: int = 0
 var railgun_active: bool = false
-
 
 var fire_direction: Vector2
 var balls_in_play: int = 0
@@ -149,6 +148,7 @@ var ammo_multiplier: float = 1.0
 var next_round_damage_mult: float = 1.0
 var next_round_ammo_mult: float = 1.0
 
+# Powerup states
 enum ActivePowerup { NONE, EXPLOSIVE, RAILGUN, BURN }
 var active_powerup: int = ActivePowerup.NONE
 var explosive_cooldown: int = 0
@@ -160,6 +160,7 @@ var burn_cooldown_max: int = 5
 var nuke_charges: int = 2
 var burn_round_active: bool = false
 
+# Boss system
 var boss_schedule = {
 	25: {"w": 2, "h": 2, "shield": 0},
 	50: {"w": 2, "h": 3, "shield": 0},
@@ -174,22 +175,29 @@ var active_elites: int = 0
 var max_elites: int = 2
 var elite_chance: float = 0.12
 
+# Pre-reservation: when an elite roll wins but no clear footprint, defer it
 var pending_elite_info: Variant = null
 var reserved_top_cols: Array = []
 var pending_elite_rounds_waited: int = 0
 const MAX_PENDING_ELITE_ROUNDS: int = 8
 
 var board_clear_played: bool = false
+
+# Rainbow brick
 var rainbow_on_board: bool = false
 var rainbow_spawn_chance: float = 0.05
 var rounds_since_rainbow: int = 0
 
+# Combo tracking
 var combo_count: int = 0
 var combo_timer: float = 0.0
-var combo_timeout: float = 1.2
+var combo_timeout: float = 1.2  # seconds between kills to maintain combo
 var combo_label: Label = null
 var combo_bar: Node2D = null
 var combo_slow_timer: float = 0.0
+
+# Client VFX Monitor
+var last_brick_healths: Dictionary = {}
 
 func _ready():
 	grid_start_x = arena_left + cell_width / 2.0
@@ -250,6 +258,7 @@ func _ready():
 
 	load_high_score()
 
+	# Apply talent effects
 	explosive_cooldown_max = max(1, 4 - Progression.get_cooldown_reduction())
 	railgun_cooldown_max = max(1, 8 - Progression.get_cooldown_reduction())
 	burn_cooldown_max = max(1, 5 - Progression.get_cooldown_reduction())
@@ -271,6 +280,7 @@ func _ready():
 			orb.set_meta("slide_to", orb.position.y + cell_height)
 			orb.set_meta("first_round", true)
 
+	# Apply lofi card stylebox to the HUD level card and gear/speed buttons
 	_apply_hud_styling()
 	update_hud()
 	update_ammo_label_position()
@@ -278,6 +288,7 @@ func _ready():
 	create_preview_balls()
 	queue_redraw()
 
+	# Combo bar — add to HUD so it always renders above the game layer
 	combo_bar = Node2D.new()
 	combo_bar.position = Vector2(0, arena_top + 2)
 	combo_bar.z_index = 100
@@ -288,12 +299,14 @@ func _ready():
 		add_child(combo_bar)
 	combo_bar.draw.connect(_draw_combo_bar)
 
+	# Settings menu: instantiate on startup so it's available for the HUD GearButton
 	var settings_scene = preload("res://scenes/settings_menu.tscn")
 	settings_menu = settings_scene.instantiate()
 	add_child(settings_menu)
 	if settings_menu and settings_menu.has_node("Panel"):
 		settings_menu.get_node("Panel").visible = false
 
+	# Start game music
 	MusicManager.start_game_music()
 
 	$HUD/GearButton.pressed.connect(func():
@@ -304,10 +317,12 @@ func _ready():
 func setup_multiplayer():
 	print("[NET] Setting up multiplayer. Server: ", multiplayer.is_server(), " ID: ", multiplayer.get_unique_id())
 	
+	# Add spawners for replicated nodes with explicit names
 	_add_spawner(brick_container, ["res://scenes/brick.tscn", "res://scenes/boss_brick.tscn", "res://scenes/guardian_brick.tscn", "res://scenes/rainbow_brick.tscn", "res://scenes/armored_brick.tscn", "res://scenes/triangle_brick.tscn", "res://scenes/diagonal_brick.tscn", "res://scenes/oil_barrel.tscn"], "BrickSpawner")
 	_add_spawner(ball_container, ["res://scenes/ball.tscn", "res://scenes/explosive_ball.tscn", "res://scenes/railgun_ball.tscn", "res://scenes/burn_ball.tscn"], "BallSpawner")
 	_add_spawner(orb_container, ["res://scenes/ammo_orb.tscn", "res://scenes/pickup.tscn"], "OrbSpawner")
 	
+	# Global state synchronization with explicit name
 	var sync = MultiplayerSynchronizer.new()
 	sync.name = "GlobalSynchronizer"
 	var config = SceneReplicationConfig.new()
@@ -318,6 +333,10 @@ func setup_multiplayer():
 	config.add_property(".:game_active")
 	config.add_property(".:p1_fired")
 	config.add_property(".:p2_fired")
+	config.add_property(".:launch_point_1")
+	config.add_property(".:launch_point_2")
+	config.add_property(".:combo_count")
+	config.add_property(".:combo_timer")
 	sync.replication_config = config
 	add_child(sync)
 	print("[NET] GlobalSynchronizer added")
@@ -339,9 +358,11 @@ func _draw():
 	var border_color = UITheme.LINE_2
 	var corner_radius = 8.0
 
+	# Draw rounded arena border
 	var rect = Rect2(arena_left, arena_top, arena_right - arena_left, arena_bottom - arena_top)
 	draw_rounded_rect_outline(rect, border_color, corner_radius, 1.0)
 
+	# Tiny corner brackets like the design
 	var L = 10.0
 	var bracket = UITheme.LINE_2
 	draw_line(Vector2(arena_left + 6, arena_top + 6), Vector2(arena_left + 6 + L, arena_top + 6), bracket, 1.0)
@@ -353,6 +374,7 @@ func _draw():
 	draw_line(Vector2(arena_right - 6, arena_bottom - 6), Vector2(arena_right - 6 - L, arena_bottom - 6), bracket, 1.0)
 	draw_line(Vector2(arena_right - 6, arena_bottom - 6), Vector2(arena_right - 6, arena_bottom - 6 - L), bracket, 1.0)
 
+	# Grid lines
 	var should_draw_grid = true
 	if settings_menu != null:
 		should_draw_grid = settings_menu.grid_enabled
@@ -375,6 +397,7 @@ func draw_rounded_rect_outline(rect: Rect2, color: Color, radius: float, width: 
 	draw_arc(Vector2(rect.position.x + radius, rect.end.y - radius), radius, PI * 0.5, PI, 8, color, width)
 	draw_arc(Vector2(rect.end.x - radius, rect.end.y - radius), radius, 0, PI * 0.5, 8, color, width)
 
+# Public helper so external menus can request a redraw when settings change
 func refresh_draw():
 	queue_redraw()
 
@@ -428,6 +451,52 @@ func _physics_process(delta):
 			if is_instance_valid(item["orb"]):
 				item["orb"].position.y = lerp(float(item["from_y"]), float(item["to_y"]), t)
 
+func _process(delta):
+	# Re-run trajectory each frame while aiming so it tracks moving/rotating bricks
+	var my_p_id = 1
+	if MultiplayerManager.is_multiplayer and not multiplayer.is_server():
+		my_p_id = 2
+	var my_fired = p1_fired if my_p_id == 1 else p2_fired
+	if is_aiming and not my_fired and game_active and not is_sliding and not is_dropping:
+		var lp = launch_point_1 if my_p_id == 1 else launch_point_2
+		var dir = (last_aim_pos - lp).normalized()
+		draw_aim_line_for_player(my_p_id, dir)
+
+	# Combo timer decay (supports temporary slow-down when bricks are hit)
+	if combo_timer > 0:
+		if not MultiplayerManager.is_multiplayer or is_multiplayer_authority():
+			var slow_ratio = clamp(combo_slow_timer / 0.1, 0.0, 1.0)
+			var decay_rate = lerp(1.0, 0.2, slow_ratio)
+			combo_timer -= delta * decay_rate
+			combo_slow_timer = max(0, combo_slow_timer - delta * 0.5)
+			if combo_timer <= 0:
+				combo_count = 0
+		if combo_bar:
+			combo_bar.visible = true
+			combo_bar.queue_redraw()
+	elif combo_bar and combo_bar.visible:
+		combo_bar.visible = false
+
+	# Client-side Visual Flash Monitor (Checks if health replicates downward and triggers flash)
+	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+		for brick in brick_container.get_children():
+			if not brick is Node2D: continue
+			var current_hp = brick.get("health")
+			if current_hp != null:
+				var brick_id = brick.get_instance_id()
+				if last_brick_healths.has(brick_id):
+					if current_hp < last_brick_healths[brick_id]:
+						# Health decreased! Play VFX and Sound on client!
+						if brick.has_method("update_display"):
+							brick.update_display()
+						if brick.has_node("Sprite"):
+							var sprite = brick.get_node("Sprite")
+							var tween = brick.create_tween()
+							tween.tween_property(sprite, "modulate", Color(2, 2, 2, 1), 0.05)
+							tween.tween_property(sprite, "modulate", Color(1, 1, 1, 1), 0.1)
+						sound_manager.play_hit()
+				last_brick_healths[brick_id] = current_hp
+
 func can_spawn_ball_for(lp: Vector2, p_id: int) -> bool:
 	if ball_container.get_child_count() > 0:
 		for ball in ball_container.get_children():
@@ -447,6 +516,8 @@ func _on_speed_pressed():
 func _on_restart_pressed():
 	Engine.time_scale = 1.0
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+
+# ---- POWERUP MANAGEMENT ----
 
 func toggle_powerup(powerup: int):
 	if not game_active:
@@ -482,12 +553,14 @@ func tick_cooldowns():
 	if burn_cooldown > 0: burn_cooldown -= 1
 
 func _apply_hud_styling():
+	# Card backing for the level row
 	var lc = $HUD.get_node_or_null("LevelCard")
 	if lc:
 		var sb = UITheme.make_card(UITheme.BG_CARD, UITheme.LINE, UITheme.R_MD)
 		sb.set_content_margin_all(8)
 		lc.add_theme_stylebox_override("panel", sb)
 
+	# Compact icon-style buttons in the top bar
 	_style_icon_button(speed_button, UITheme.CYAN)
 	_style_icon_button($HUD/GearButton, UITheme.TEXT)
 
@@ -611,6 +684,13 @@ func _on_nuke_pressed():
 	update_all_powerup_ui()
 
 func do_nuke():
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_do_nuke_rpc.rpc()
+	else:
+		_do_nuke_rpc()
+
+@rpc("authority", "call_local")
+func _do_nuke_rpc():
 	sound_manager.play_nuke()
 	add_shake(12.0)
 	spawn_modifier_popup("☢ NUKE ☢", Color(1.0, 0.9, 0.2))
@@ -620,9 +700,11 @@ func do_nuke():
 		if is_instance_valid(brick) and brick is Node2D:
 			if brick.has_node("Sprite"):
 				spawn_brick_particles(brick.global_position, brick.get_node("Sprite").color)
-			if brick.has_method("get_brick_value"):
+			if multiplayer.is_server() and brick.has_method("get_brick_value"):
 				add_score(brick.get_brick_value())
-			brick.queue_free()
+			# Note: Server destroys the brick physically, client just plays VFX
+			if multiplayer.is_server():
+				brick.queue_free()
 
 	spawn_explosion_vfx(Vector2(195, arena_top + (arena_bottom - arena_top) / 2), 200)
 
@@ -683,6 +765,8 @@ func update_ammo_label_position():
 		ammo_label_2.offset_top = launch_point_2.y - 10
 		ammo_label_2.offset_bottom = launch_point_2.y + 15
 		ammo_label_2.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+
+# ---- PREVIEW & AIMING ----
 
 func _input(event):
 	var my_p_id = 1
@@ -756,6 +840,7 @@ func draw_aim_line_for_player(p_id: int, direction: Vector2):
 	var result = space_state.intersect_ray(query)
 	
 	if result:
+		# Dotted main line to first bounce
 		var total_dist = lp.distance_to(result.position)
 		var dir_norm = (result.position - lp).normalized()
 		var pos = lp
@@ -770,6 +855,7 @@ func draw_aim_line_for_player(p_id: int, direction: Vector2):
 			pos = pos + dir_norm * gap
 			traveled += gap
 
+		# Bounce preview — shorter dots, fading feel
 		if active_powerup != ActivePowerup.RAILGUN:
 			var bounce_dir = direction.bounce(result.normal)
 			var b_pos = result.position
@@ -796,6 +882,8 @@ func draw_aim_line_for_player(p_id: int, direction: Vector2):
 			pos = pos + dir_norm * 8.0
 			al.add_point(pos)
 			pos = pos + dir_norm * 5.0
+
+# ---- FIRING ----
 
 func start_firing_for_player(p_id: int, dir: Vector2):
 	var total_ammo = ammo + bonus_ammo
@@ -896,6 +984,7 @@ func do_launch_ball(p_id: int, dir: Vector2):
 	ball.speed = 800.0
 	ball.damage_multiplier = damage_multiplier * Progression.get_damage_multiplier()
 	ball.is_powered = (damage_multiplier > 1.0)
+	# If a burn round is active, this ball will apply burn stacks on hit
 	ball.applies_burn = burn_round_active
 	ball.ball_returned.connect(_on_ball_returned)
 	ball.ball_landed.connect(_on_ball_landed)
@@ -909,10 +998,14 @@ func do_launch_ball(p_id: int, dir: Vector2):
 		p2_balls_in_play += 1
 		if magazine_2: magazine_2.fire_ball()
 
+# ---- EXPLOSION ----
+
 func do_explosion(center: Vector2, radius: float):
-	sound_manager.play_explode()
-	add_shake(8.0)
-	spawn_explosion_vfx(center, radius)
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_do_explosion_vfx_rpc.rpc(center, radius)
+	else:
+		_do_explosion_vfx_rpc(center, radius)
+		
 	var ball_count = ammo + bonus_ammo
 	var inner_radius = radius * 0.4
 	var direct_damage = max(20, int(8.0 * ball_count)) if current_round > 10 else 20
@@ -933,6 +1026,12 @@ func do_explosion(center: Vector2, radius: float):
 				brick.take_damage(outer_damage, Vector2.DOWN, true)
 				if brick.has_method("apply_explosion_crack"):
 					brick.apply_explosion_crack(2)
+
+@rpc("authority", "call_local")
+func _do_explosion_vfx_rpc(center: Vector2, radius: float):
+	sound_manager.play_explode()
+	add_shake(8.0)
+	spawn_explosion_vfx(center, radius)
 
 func spawn_explosion_vfx(center: Vector2, radius: float):
 	var explosion = Node2D.new()
@@ -959,6 +1058,32 @@ func spawn_explosion_vfx(center: Vector2, radius: float):
 	)
 
 func do_oil_barrel_explosion(center: Vector2, radius: float, base_damage: int):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_do_oil_barrel_vfx_rpc.rpc(center, radius)
+	else:
+		_do_oil_barrel_vfx_rpc(center, radius)
+		
+	var inner_radius = radius * 0.3
+	for brick in brick_container.get_children():
+		if not brick is Node2D: continue
+		var dist = center.distance_to(brick.position)
+		if dist <= radius:
+			# Strip armor on any armored brick in range
+			if brick.has_method("strip_armor"):
+				brick.strip_armor()
+			# Apply damage
+			if dist < 1.0:
+				brick.take_damage(base_damage, Vector2.DOWN, true)
+			elif dist <= inner_radius:
+				brick.take_damage(int(base_damage * 0.7), Vector2.DOWN, true)
+			else:
+				var falloff = 1.0 - (dist / radius)
+				brick.take_damage(max(1, int(base_damage * falloff)), Vector2.DOWN, true)
+			if brick.has_method("apply_explosion_crack"):
+				brick.apply_explosion_crack(0 if dist < inner_radius else 1 if dist < radius * 0.6 else 2)
+
+@rpc("authority", "call_local")
+func _do_oil_barrel_vfx_rpc(center: Vector2, radius: float):
 	sound_manager.play_explode()
 	add_shake(10.0)
 	var explosion = Node2D.new()
@@ -997,25 +1122,16 @@ func do_oil_barrel_explosion(center: Vector2, radius: float, base_damage: int):
 		if is_instance_valid(explosion):
 			explosion.queue_free()
 	)
-	var inner_radius = radius * 0.3
-	for brick in brick_container.get_children():
-		if not brick is Node2D: continue
-		var dist = center.distance_to(brick.position)
-		if dist <= radius:
-			if brick.has_method("strip_armor"):
-				brick.strip_armor()
-			if dist < 1.0:
-				brick.take_damage(base_damage, Vector2.DOWN, true)
-			elif dist <= inner_radius:
-				brick.take_damage(int(base_damage * 0.7), Vector2.DOWN, true)
-			else:
-				var falloff = 1.0 - (dist / radius)
-				brick.take_damage(max(1, int(base_damage * falloff)), Vector2.DOWN, true)
-			if brick.has_method("apply_explosion_crack"):
-				brick.apply_explosion_crack(0 if dist < inner_radius else 1 if dist < radius * 0.6 else 2)
 	spawn_screen_flash()
 
 func spawn_railgun_trail(pos: Vector2):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_spawn_railgun_trail_rpc.rpc(pos)
+	else:
+		_spawn_railgun_trail_rpc(pos)
+
+@rpc("authority", "call_local")
+func _spawn_railgun_trail_rpc(pos: Vector2):
 	var trail = Node2D.new()
 	trail.position = pos
 	particle_container.add_child(trail)
@@ -1036,6 +1152,54 @@ func spawn_railgun_trail(pos: Vector2):
 			trail.queue_free()
 	)
 
+func spawn_tunnel_hole(hit_point: Vector2):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_spawn_tunnel_hole_rpc.rpc(hit_point)
+	else:
+		_spawn_tunnel_hole_rpc(hit_point)
+
+@rpc("authority", "call_local")
+func _spawn_tunnel_hole_rpc(pos: Vector2):
+	var hole = Node2D.new()
+	hole.position = pos
+	particle_container.add_child(hole)
+	hole.draw.connect(func():
+		hole.draw_circle(Vector2.ZERO, 6, Color(1.0, 0.5, 0.1, hole.modulate.a * 0.6))
+		hole.draw_circle(Vector2.ZERO, 4, Color(1.0, 0.8, 0.3, hole.modulate.a * 0.8))
+		hole.draw_circle(Vector2.ZERO, 2.5, Color(0.1, 0.05, 0.0, hole.modulate.a))
+	)
+	hole.queue_redraw()
+	var tween = hole.create_tween()
+	tween.tween_property(hole, "modulate:a", 0.0, 1.5).set_ease(Tween.EASE_IN)
+	tween.tween_callback(hole.queue_free)
+
+func spawn_purple_spray(hit_point: Vector2):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_spawn_purple_spray_rpc.rpc(hit_point)
+	else:
+		_spawn_purple_spray_rpc(hit_point)
+
+@rpc("authority", "call_local")
+func _spawn_purple_spray_rpc(pos: Vector2):
+	for i in range(8):
+		var p = ColorRect.new()
+		var s = randf_range(2, 5)
+		p.size = Vector2(s, s)
+		p.position = pos + Vector2(-s/2, -s/2)
+		p.color = [Color(0.6, 0.2, 0.9), Color(0.7, 0.3, 1.0), Color(0.5, 0.15, 0.8), Color(0.8, 0.4, 1.0)][randi() % 4]
+		particle_container.add_child(p)
+		var angle = randf_range(0, TAU)
+		var dist = randf_range(15, 40)
+		var target = p.position + Vector2(cos(angle) * dist, sin(angle) * dist)
+		var tween = p.create_tween()
+		tween.set_parallel(true)
+		tween.tween_property(p, "position", target, 0.3).set_ease(Tween.EASE_OUT)
+		tween.tween_property(p, "modulate:a", 0.0, 0.3)
+		tween.chain().tween_callback(p.queue_free)
+	add_shake(2.0)
+
+# ---- PICKUPS & RAINBOW ----
+
 func collect_pickup(pickup_type: int):
 	if pickup_type == 0:
 		next_round_ammo_mult = 2.0
@@ -1052,6 +1216,7 @@ func on_rainbow_brick_destroyed(pos: Vector2):
 	rainbow_on_board = false
 	rounds_since_rainbow = 0
 	rainbow_spawn_chance = 0.05
+	# Drop: 40% 2x ammo, 40% 2x damage, 20% nuke charge
 	var roll = randf()
 	var pickup = PICKUP_SCENE.instantiate()
 	pickup.position = pos
@@ -1065,25 +1230,31 @@ func on_boss_killed(boss):
 		spawn_modifier_popup("FINAL BOSS DEFEATED!", Color(1.0, 0.85, 0.2))
 	elif boss.is_elite:
 		active_elites -= 1
+		# Drop a random powerup (0 or 1)
 		var pickup = PICKUP_SCENE.instantiate()
 		pickup.position = boss.global_position
 		pickup.pickup_type = randi_range(0, 1)
 		orb_container.add_child(pickup, true)
 		spawn_modifier_popup("ELITE DEFEATED!", Color(0.6, 0.3, 0.9))
+	# Track killed boss rounds for elite system
 	for round_num in boss_schedule.keys():
 		var info = boss_schedule[round_num]
 		if boss.grid_width == info["w"] and boss.grid_height == info["h"]:
 			if round_num not in bosses_killed:
 				bosses_killed.append(round_num)
 
+# ---- ROUND MANAGEMENT ----
+
 @rpc("authority", "call_local")
 func animate_launcher(p_id: int, new_x: float):
 	if p_id == 1:
 		next_launch_x_1 = new_x
+		launch_point_1.x = new_x # Immediate update for aim line
 		magazine.shift_entrance_to(new_x)
 		create_tween().tween_property(launcher, "position:x", new_x, 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 	else:
 		next_launch_x_2 = new_x
+		launch_point_2.x = new_x
 		if magazine_2: magazine_2.shift_entrance_to(new_x)
 		if launcher_2: create_tween().tween_property(launcher_2, "position:x", new_x, 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 
@@ -1234,6 +1405,7 @@ func try_spawn_special_bricks():
 	if not game_active:
 		return
 	var occupied = get_occupied_cells()
+	# Armored brick: 10% chance after round 15
 	if current_round >= 15 and randf() < 0.10:
 		var available = []
 		for c in range(grid_cols):
@@ -1248,6 +1420,7 @@ func try_spawn_special_bricks():
 			brick_container.add_child(brick, true)
 			occupied.append(Vector2(col, 0))
 
+	# Rotating triangle brick — chaotic spinning hazard, max one on board
 	var has_triangle = false
 	var has_diagonal = false
 	for b in brick_container.get_children():
@@ -1272,6 +1445,7 @@ func try_spawn_special_bricks():
 			brick_container.add_child(tri, true)
 			occupied.append(Vector2(col, 0))
 
+	# Diagonal-cut brick — grid-aligned right triangle, slightly more common
 	if not has_diagonal and randf() < 0.6:
 		var available = []
 		for c in range(grid_cols):
@@ -1287,6 +1461,7 @@ func try_spawn_special_bricks():
 			brick_container.add_child(d, true)
 			occupied.append(Vector2(col, 0))
 
+	# Oil barrel: 8% chance after round 10
 	if current_round >= 10 and randf() < 0.08:
 		var available = []
 		for c in range(grid_cols):
@@ -1441,6 +1616,7 @@ func spawn_boss_at(info: Dictionary, col: int):
 		boss.is_elite = true
 		boss.health = current_round
 		boss.max_health = current_round
+		# Give elites a shield equal to their HP
 		boss.has_shield = true
 		boss.shield_hp = current_round
 		boss.shield_max = current_round
@@ -1455,6 +1631,8 @@ func spawn_boss_at(info: Dictionary, col: int):
 	var y = grid_start_y + (info["h"] - 1) * cell_height / 2.0
 	boss.position = Vector2(x, y)
 	brick_container.add_child(boss, true)
+
+# ---- SLIDE & DROP ----
 
 func start_slide_existing():
 	is_sliding = true
@@ -1591,6 +1769,8 @@ func spawn_dust(pos: Vector2):
 			dust.queue_free()
 	)
 
+# ---- SPAWNING ----
+
 func spawn_round_bricks_at_row0() -> Array:
 	var spawned = []
 	if not game_active:
@@ -1628,6 +1808,7 @@ func spawn_ammo_orbs_at_row0() -> Array:
 		orb.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
 		orb_container.add_child(orb, true)
 		spawned.append(orb)
+		# Ammo magnet: chance for bonus orb
 		var magnet_chance = Progression.get_extra_orb_chance()
 		if magnet_chance > 0 and randf() < magnet_chance:
 			available.erase(col)
@@ -1666,7 +1847,16 @@ func get_occupied_cells() -> Array:
 		occupied.append(Vector2(col, row))
 	return occupied
 
+# ---- HUD & SCORE ----
+
 func spawn_ammo_popup(count: int):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_spawn_ammo_popup_rpc.rpc(count)
+	else:
+		_spawn_ammo_popup_rpc(count)
+
+@rpc("authority", "call_local")
+func _spawn_ammo_popup_rpc(count: int):
 	var tier = min(count, 5)
 	var label = Label.new()
 	label.text = "+%d" % count
@@ -1692,6 +1882,13 @@ func spawn_ammo_popup(count: int):
 	tween.chain().tween_callback(label.queue_free)
 
 func spawn_modifier_popup(text: String, color: Color):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_spawn_modifier_popup_rpc.rpc(text, color)
+	else:
+		_spawn_modifier_popup_rpc(text, color)
+
+@rpc("authority", "call_local")
+func _spawn_modifier_popup_rpc(text: String, color: Color):
 	var label = Label.new()
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1706,12 +1903,20 @@ func spawn_modifier_popup(text: String, color: Color):
 	tween.chain().tween_callback(label.queue_free)
 
 func spawn_score_popup(pos: Vector2, points: int):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_spawn_score_popup_rpc.rpc(pos, points)
+	else:
+		_spawn_score_popup_rpc(pos, points)
+
+@rpc("authority", "call_local", "unreliable")
+func _spawn_score_popup_rpc(pos: Vector2, points: int):
 	var label = Label.new()
 	var display_points = points * max(1, combo_count)
 	label.text = "+%d" % display_points
 	label.position = pos + Vector2(-15, -10)
 	label.add_theme_font_size_override("font_size", 11 + min(combo_count, 5) * 2)
 
+	# Color based on combo
 	var col: Color
 	if combo_count >= 7: col = Color(1.0, 0.3, 0.2)
 	elif combo_count >= 5: col = Color(1.0, 0.5, 0.15)
@@ -1778,11 +1983,13 @@ func update_hud():
 	round_label.text = "%02d" % current_round
 	high_score_label.text = "SCORE · BEST %d" % high_score
 	update_score_display()
+	# XP display
 	if xp_bar_fill and xp_text and level_label and sp_label:
 		var progress = Progression.xp_progress()
 		xp_bar_fill.offset_right = 60.0 + progress * 240.0
 		xp_text.text = "%d / %d XP" % [Progression.xp, Progression.xp_for_current_level()]
 		level_label.text = "%d" % Progression.level
+		# Update SP prefix and numeric label separately
 		if $HUD.has_node("SPPrefix"):
 			$HUD.get_node("SPPrefix").add_theme_color_override("font_color", UITheme.TEXT_MUTE)
 		if Progression.skill_points > 0:
@@ -1809,6 +2016,13 @@ func load_high_score():
 			file.close()
 
 func spawn_brick_particles_directional(pos: Vector2, color: Color, hit_dir: Vector2):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_spawn_brick_particles_rpc.rpc(pos, color, hit_dir)
+	else:
+		_spawn_brick_particles_rpc(pos, color, hit_dir)
+
+@rpc("authority", "call_local", "unreliable")
+func _spawn_brick_particles_rpc(pos: Vector2, color: Color, hit_dir: Vector2):
 	add_shake(3.0)
 	if not railgun_active:
 		sound_manager.play_destroy()
@@ -1824,6 +2038,7 @@ func spawn_brick_particles_directional(pos: Vector2, color: Color, hit_dir: Vect
 		p.color = color.lightened(randf_range(-0.1, 0.15))
 		particles.add_child(p)
 
+		# Directional: particles fly mostly in the hit direction with spread
 		var base_angle = hit_dir.angle()
 		var spread = randf_range(-0.8, 0.8)
 		var angle = base_angle + spread
@@ -1834,6 +2049,7 @@ func spawn_brick_particles_directional(pos: Vector2, color: Color, hit_dir: Vect
 		tween.set_parallel(true)
 		tween.tween_property(p, "position", target_pos, 0.35).set_ease(Tween.EASE_OUT)
 		tween.tween_property(p, "modulate:a", 0.0, 0.35)
+		# Slight rotation for debris feel
 		tween.tween_property(p, "rotation", randf_range(-2, 2), 0.35)
 		tween.chain().tween_callback(p.queue_free)
 
@@ -1845,26 +2061,6 @@ func spawn_brick_particles_directional(pos: Vector2, color: Color, hit_dir: Vect
 func spawn_brick_particles(pos: Vector2, color: Color):
 	spawn_brick_particles_directional(pos, color, Vector2.DOWN)
 
-func _process(delta):
-	# Re-run trajectory each frame while aiming so it tracks moving/rotating bricks
-	#if is_aiming and not is_firing and game_active and not is_sliding and not is_dropping:
-	#	update_aim_line(last_aim_pos)
-
-	# Combo timer decay (supports temporary slow-down when bricks are hit)
-	if combo_timer > 0:
-		var slow_ratio = clamp(combo_slow_timer / 0.1, 0.0, 1.0)
-		var decay_rate = lerp(1.0, 0.2, slow_ratio)
-		combo_timer -= delta * decay_rate
-		combo_slow_timer = max(0, combo_slow_timer - delta * 0.5)
-		if combo_bar:
-			combo_bar.visible = true
-			combo_bar.queue_redraw()
-		if combo_timer <= 0:
-			combo_count = 0
-			if combo_bar:
-				combo_bar.visible = false
-	elif combo_bar and combo_bar.visible:
-		combo_bar.visible = false
 func on_brick_hit():
 	if combo_count >= 2:
 		combo_slow_timer = 0.1
@@ -1874,11 +2070,15 @@ func on_brick_destroyed():
 	combo_timer = combo_timeout
 
 	if combo_count >= 5:
+		# Screen flash
 		spawn_screen_flash()
+		# Combo text
 		spawn_combo_text(combo_count)
+	# Combo sound — pitches up a half-step per combo level
 	if combo_count >= 5 and sound_manager:
 		sound_manager.play_combo(combo_count)
 
+	# Check if board is clear
 	call_deferred("_check_board_clear_visual")
 
 func _is_board_clear() -> bool:
@@ -1903,9 +2103,11 @@ func _check_board_clear_visual():
 		return
 	board_clear_played = true
 	play_board_clear()
+	# Kill all balls so the round ends without waiting for them to drift back
 	for ball in ball_container.get_children():
 		if is_instance_valid(ball):
 			ball.queue_free()
+	# Brief delay so the player sees the celebration before the next round
 	var t = create_tween()
 	t.tween_interval(0.55)
 	t.tween_callback(func():
@@ -1918,6 +2120,13 @@ func _check_board_clear_visual():
 	)
 
 func play_board_clear():
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_play_board_clear_rpc.rpc()
+	else:
+		_play_board_clear_rpc()
+
+@rpc("authority", "call_local")
+func _play_board_clear_rpc():
 	var rect = ColorRect.new()
 	var mat = ShaderMaterial.new()
 	mat.shader = BOARD_CLEAR_SHADER
@@ -1934,7 +2143,7 @@ func play_board_clear():
 	var sz = rect.size
 	if sz.x > 0 and sz.y > 0:
 		mat.set_shader_parameter("aspect", sz.x / sz.y)
-
+	
 	add_shake(6.0)
 	if sound_manager:
 		sound_manager.play_combo(8)
@@ -1946,6 +2155,7 @@ func play_board_clear():
 	, 0.0, 1.0, 1.1)
 	tween.tween_callback(rect.queue_free)
 
+	# Big celebratory text
 	var label = Label.new()
 	label.text = "BOARD CLEAR!"
 	label.add_theme_font_size_override("font_size", 32)
@@ -1968,6 +2178,7 @@ func play_board_clear():
 	label.z_index = 101
 	label.modulate.a = 0.0
 	$HUD.add_child(label)
+	# Pivot at center so the scale tween doesn't push it off-screen
 	label.pivot_offset = label.size * 0.5
 	var ltween = create_tween()
 	ltween.set_parallel(true)
@@ -1975,9 +2186,10 @@ func play_board_clear():
 	ltween.tween_property(label, "scale", Vector2(1.3, 1.3), 0.7).from(Vector2(0.6, 0.6)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	ltween.chain().tween_property(label, "modulate:a", 0.0, 0.4)
 	ltween.chain().tween_callback(label.queue_free)
+
 func check_early_round_end():
 	# Only consider early end while firing
-	if not is_firing:
+	if not p1_fired and not p2_fired:
 		return
 	# Only if we have a large amount of ammo
 	if (ammo + bonus_ammo) < 50:
@@ -1987,11 +2199,22 @@ func check_early_round_end():
 		for ball in ball_container.get_children():
 			if is_instance_valid(ball):
 				ball.queue_free()
-		balls_in_play = 0
-		is_spawning = false
-		balls_to_spawn = 0
+		p1_balls_in_play = 0
+		p2_balls_in_play = 0
+		p1_is_spawning = false
+		p2_is_spawning = false
+		p1_balls_to_spawn = 0
+		p2_balls_to_spawn = 0
 		end_round()
+
 func spawn_screen_flash():
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_spawn_screen_flash_rpc.rpc()
+	else:
+		_spawn_screen_flash_rpc()
+
+@rpc("authority", "call_local")
+func _spawn_screen_flash_rpc():
 	var flash = ColorRect.new()
 	flash.color = Color(1, 1, 1, 0.15)
 	flash.anchors_preset = 15
@@ -2011,8 +2234,10 @@ func _draw_combo_bar():
 	var ratio = combo_timer / combo_timeout
 	var bar_y = 0.0
 
+	# Background
 	combo_bar.draw_rect(Rect2(arena_left, bar_y, bar_width, bar_height), Color(0.2, 0.22, 0.25, 0.8))
 
+	# Fill
 	var fill_width = bar_width * ratio
 	var bar_color: Color
 	if combo_count >= 7: bar_color = Color(1.0, 0.3, 0.15)
@@ -2021,20 +2246,31 @@ func _draw_combo_bar():
 	else: bar_color = Color(0.7, 0.7, 0.7)
 	combo_bar.draw_rect(Rect2(arena_left, bar_y, fill_width, bar_height), bar_color)
 
+	# Flame tip
 	if ratio > 0.05:
 		var tip_x = arena_left + fill_width
 		var flame_flicker = sin(Time.get_ticks_msec() * 0.015) * 2
 		combo_bar.draw_circle(Vector2(tip_x, bar_y + bar_height / 2 + flame_flicker), 4, Color(1.0, 0.5, 0.1, 0.6))
 		combo_bar.draw_circle(Vector2(tip_x, bar_y + bar_height / 2), 2.5, Color(1.0, 0.8, 0.3, 0.8))
 
+	# Multiplier text - centered above the bar, scales with combo
 	var font_size = 14 + min(combo_count, 8) * 3
 	var text = "%dx" % combo_count
 	var text_x = arena_left
 	var text_y = bar_y - 6
+	# Glow behind text
 	combo_bar.draw_string(ThemeDB.fallback_font, Vector2(text_x + 1, text_y + 1), text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, Color(0, 0, 0, 0.4))
 	combo_bar.draw_string(ThemeDB.fallback_font, Vector2(text_x, text_y), text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, bar_color)
 
 func spawn_combo_text(combo: int):
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_spawn_combo_text_rpc.rpc(combo)
+	else:
+		_spawn_combo_text_rpc(combo)
+
+@rpc("authority", "call_local", "unreliable")
+func _spawn_combo_text_rpc(combo: int):
+	# Reuse single label — remove old one
 	if combo_label and is_instance_valid(combo_label):
 		combo_label.queue_free()
 

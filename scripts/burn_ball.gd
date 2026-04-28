@@ -36,7 +36,7 @@ func _draw():
 	var col = Color(0.95, 0.5, 0.15) if player_id == 1 else Color(0.95, 0.2, 0.3)
 	draw_circle(Vector2.ZERO, 8, col)
 	draw_circle(Vector2.ZERO, 5, Color(1.0, 0.7, 0.2))
-    draw_circle(Vector2.ZERO, 5, Color(1.0, 0.7, 0.2))
+	draw_circle(Vector2.ZERO, 5, Color(1.0, 0.7, 0.2))
 	# Small flame particles
 	var flame_y = -6 - pulse * 3
 	draw_circle(Vector2(randf_range(-3, 3), flame_y), 3, Color(1.0, 0.6, 0.1, 0.5 + pulse * 0.3))
