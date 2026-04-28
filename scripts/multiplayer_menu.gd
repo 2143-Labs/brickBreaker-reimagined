@@ -67,17 +67,48 @@ func _on_refresh_steam():
 	MultiplayerManager.find_steam_lobbies()
 	status_label.text = "SEARCHING STEAM..."
 
+
 func _on_lobbies_found(lobbies):
 	status_label.text = "FOUND %d LOBBIES" % lobbies.size()
 	for id in lobbies:
-		var btn = Button.new()
 		var lobby_name = Steam.getLobbyData(id, "name")
-		btn.text = lobby_name if lobby_name != "" else "Unnamed Lobby"
+		var ping = MultiplayerManager.get_ping_to_lobby(id)
 		
-		# Minimal styling for list buttons
+		# Create the button container
+		var h_box = HBoxContainer.new()
+		var btn = Button.new()
+		var ping_label = Label.new()
+		
+		# Format Ping Text
+		var ping_text = ""
+		var ping_color = Color(1, 1, 1) # Default White
+		
+		if ping == -1:
+			ping_text = "[??? ms]"
+			ping_color = UITheme.TEXT_DIM
+		else:
+			ping_text = "[%d ms]" % ping
+			# Color coding based on latency
+			if ping < 80: ping_color = UITheme.LIME
+			elif ping < 150: ping_color = UITheme.AMBER
+			else: ping_color = UITheme.ROSE
+			
+		ping_label.text = ping_text
+		ping_label.add_theme_color_override("font_color", ping_color)
+		ping_label.add_theme_font_size_override("font_size", 9)
+		
+		btn.text = lobby_name if lobby_name != "" else "Unnamed Lobby"
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.add_theme_font_size_override("font_size", 10)
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		
+		# Connect button
 		btn.pressed.connect(func(): MultiplayerManager.join_steam_lobby(id))
-		lobby_list.add_child(btn)
+		
+		# Add to list
+		h_box.add_child(ping_label)
+		h_box.add_child(btn)
+		lobby_list.add_child(h_box)
 
 func _on_host_ip():
 	MultiplayerManager.host_ip()

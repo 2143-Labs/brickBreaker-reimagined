@@ -19,6 +19,11 @@ const DEFAULT_PORT = 7777
 
 func _ready():
 	_initialize_steam()
+
+	if is_on_steam:
+		# Start warming up the network location data immediately
+		Steam.initRelayNetworkAccess()
+
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
@@ -53,35 +58,44 @@ func host_steam():
 	Steam.createLobby(Steam.LOBBY_TYPE_PUBLIC, 2)
 
 func _on_lobby_created(result: int, new_lobby_id: int):
-	if result == 1: # k_EResultOK
+	if result == 1:
 		lobby_id = new_lobby_id
 		
-		# 1. Set the metadata so others can find us
+		# Set static metadata
 		Steam.setLobbyData(lobby_id, "name", Steam.getPersonaName() + "'s Lofi Room")
 		Steam.setLobbyData(lobby_id, "game", "lofi_brick_breaker")
-		
-		# 2. IMPORTANT: Store the Host's Steam ID in the lobby
-		# Clients need to know WHICH Steam User to connect to, not just the Lobby ID
-		var host_steam_id = Steam.getSteamID()
-		Steam.setLobbyData(lobby_id, "host_steam_id", str(host_steam_id))
-		
+		Steam.setLobbyData(lobby_id, "host_steam_id", str(Steam.getSteamID()))
+
+		# Start the loop to find and set the location
+		_update_lobby_location()
+
+		# Initialize peer
 		steam_peer = SteamMultiplayerPeer.new()
-		
-		# 3. FIX: create_host(virtual_port)
-		# We use 0 as the virtual port. Do NOT pass lobby_id here.
 		var error = steam_peer.create_host(0)
-		
 		if error == OK:
 			multiplayer.multiplayer_peer = steam_peer
 			is_multiplayer = true
 			connection_succeeded.emit()
-			print("Steam Host set on virtual port 0")
-		else:
-			print("Steam Host Error: ", error)
-			connection_failed.emit()
 	else:
 		connection_failed.emit()
 
+func _update_lobby_location():
+	if lobby_id == 0: return # Lobby was closed
+	
+	var location_dict = Steam.getLocalPingLocation()
+	
+	# Check if we actually got a PackedByteArray with data
+	if location_dict.has("location") and location_dict["location"].size() > 0:
+		var location_string = Steam.convertPingLocationToString(location_dict["location"])
+		
+		if location_string != "":
+			Steam.setLobbyData(lobby_id, "location", location_string)
+			print("[Steam] Successfully updated lobby with location: ", location_string)
+			return # We are done!
+	
+	# If we reach here, data wasn't ready. Wait 1 second and try again.
+	print("[Steam] Location not ready, retrying in 1s...")
+	get_tree().create_timer(1.0).timeout.connect(_update_lobby_location)
 func join_steam_lobby(id: int):
 	close_connection()
 	using_steam = true
@@ -180,3 +194,26 @@ func _on_lobby_join_requested(id: int, _friend: int):
 @rpc("authority", "call_local", "reliable")
 func start_game():
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+
+func get_ping_to_lobby(id: int) -> int:
+	if not is_on_steam: return -1
+	
+	var location_string = Steam.getLobbyData(id, "location")
+	
+	# DEBUG PRINT
+	print("[Steam] Client retrieved location string from Lobby ", id, ": ", location_string)
+
+	if location_string == "": 
+		return -1
+	
+	var parsed_results = Steam.parsePingLocationString(location_string)
+	
+	if parsed_results.has("success") and parsed_results["success"]:
+		var ping_ms = Steam.estimatePingTimeFromLocalHost(parsed_results["ping_location"])
+		print("[Steam] Estimated Ping to ", id, ": ", ping_ms, "ms")
+		
+		if ping_ms < 0: return -1 # -1 = Failed, -2 = Unknown
+		return ping_ms
+		
+	return -1

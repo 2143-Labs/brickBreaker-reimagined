@@ -17,6 +17,7 @@ func _initialize_steam():
 	if response['status'] == 0:
 		is_on_steam = true
 		# Connect Steam signals
+		
 		Steam.lobby_match_list.connect(_on_lobby_match_list)
 		Steam.lobby_created.connect(_on_lobby_created)
 		Steam.join_requested.connect(_on_lobby_join_requested) # Steam "Join Game" from friend list
