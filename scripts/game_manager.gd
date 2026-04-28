@@ -10,6 +10,9 @@ const BOSS_BRICK_SCENE = preload("res://scenes/boss_brick.tscn")
 const GUARDIAN_BRICK_SCENE = preload("res://scenes/guardian_brick.tscn")
 const RAINBOW_BRICK_SCENE = preload("res://scenes/rainbow_brick.tscn")
 const ARMORED_BRICK_SCENE = preload("res://scenes/armored_brick.tscn")
+const TRIANGLE_BRICK_SCENE = preload("res://scenes/triangle_brick.tscn")
+const DIAGONAL_BRICK_SCENE = preload("res://scenes/diagonal_brick.tscn")
+const BOARD_CLEAR_SHADER = preload("res://assets/shaders/board_clear.gdshader")
 const OIL_BARREL_SCENE = preload("res://scenes/oil_barrel.tscn")
 const PICKUP_SCENE = preload("res://scenes/pickup.tscn")
 const SAVE_PATH = "user://highscore.save"
@@ -54,10 +57,11 @@ var current_round: int = 1
 var score: int = 0
 var pending_xp: int = 0
 var high_score: int = 0
-var ammo: int = 1
+var ammo: int = 121
 var bonus_ammo: int = 0
 var pending_ammo: int = 0
 var is_aiming: bool = false
+var last_aim_pos: Vector2 = Vector2.ZERO
 var is_firing: bool = false
 var railgun_deaths_pending: int = 0
 var railgun_total_kills: int = 0
@@ -118,7 +122,7 @@ var railgun_cooldown: int = 0
 var railgun_cooldown_max: int = 0  # disabled for testing — railgun has no cooldown
 var burn_cooldown: int = 0
 var burn_cooldown_max: int = 5
-var nuke_charges: int = 0
+var nuke_charges: int = 2
 var burn_round_active: bool = false
 
 # Boss system
@@ -135,6 +139,14 @@ var bosses_killed: Array = []
 var active_elites: int = 0
 var max_elites: int = 2
 var elite_chance: float = 0.12
+# Pre-reservation: when an elite roll wins but no clear footprint, defer it
+# and hold a strip of top-row columns clear so space opens up over a few rounds.
+var pending_elite_info: Variant = null
+var reserved_top_cols: Array = []
+var pending_elite_rounds_waited: int = 0
+const MAX_PENDING_ELITE_ROUNDS: int = 8
+
+var board_clear_played: bool = false
 
 # Rainbow brick
 var rainbow_on_board: bool = false
@@ -507,6 +519,7 @@ func _input(event):
 	if event is InputEventMouseMotion or event is InputEventScreenDrag:
 		if is_aiming:
 			var aim_pos = event.position if event is InputEventMouseMotion else event.position
+			last_aim_pos = aim_pos
 			update_aim_line(aim_pos)
 
 func update_aim_line(target: Vector2):
@@ -916,6 +929,7 @@ func on_railgun_death_finished():
 
 func end_round():
 	is_firing = false
+	board_clear_played = false
 	current_round += 1
 	launch_point.x = next_launch_x
 
@@ -1009,6 +1023,7 @@ func spawn_guardians_if_needed():
 					brick_container.add_child(g)
 
 func spawn_round_content():
+	try_spawn_pending_elite()
 	try_spawn_boss()
 	try_spawn_elite()
 	spawn_round_bricks_at_row0()
@@ -1033,6 +1048,46 @@ func try_spawn_special_bricks():
 			brick.health = current_round
 			brick.max_health = current_round
 			brick_container.add_child(brick)
+			occupied.append(Vector2(col, 0))
+
+	# Rotating triangle brick — chaotic spinning hazard, max one on board
+	var has_triangle = false
+	var has_diagonal = false
+	for b in brick_container.get_children():
+		if b.is_in_group("triangle_bricks"):
+			has_triangle = true
+		if b.is_in_group("diagonal_bricks"):
+			has_diagonal = true
+	if not has_triangle and randf() < 0.5:
+		var available = []
+		for c in range(grid_cols):
+			if Vector2(c, 0) not in occupied and c not in reserved_top_cols:
+				available.append(c)
+		if available.size() > 0:
+			var col = available[randi() % available.size()]
+			var tri = TRIANGLE_BRICK_SCENE.instantiate()
+			tri.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
+			tri.health = current_round
+			tri.max_health = current_round
+			tri.rotation = randf() * TAU
+			tri.spin_speed = randf_range(1.0, 2.0) * (1.0 if randf() > 0.5 else -1.0)
+			brick_container.add_child(tri)
+			occupied.append(Vector2(col, 0))
+
+	# Diagonal-cut brick — grid-aligned right triangle, slightly more common
+	if not has_diagonal and randf() < 0.6:
+		var available = []
+		for c in range(grid_cols):
+			if Vector2(c, 0) not in occupied and c not in reserved_top_cols:
+				available.append(c)
+		if available.size() > 0:
+			var col = available[randi() % available.size()]
+			var d = DIAGONAL_BRICK_SCENE.instantiate()
+			d.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
+			d.health = current_round
+			d.max_health = current_round
+			d.orientation = randi() % 4
+			brick_container.add_child(d)
 			occupied.append(Vector2(col, 0))
 
 	# Oil barrel: 8% chance after round 10
@@ -1070,6 +1125,8 @@ func get_boss_info(round_num: int) -> Variant:
 func try_spawn_elite():
 	if current_round < 75 or active_elites >= max_elites:
 		return
+	if pending_elite_info != null:
+		return  # already have one waiting for space
 	var eligible = []
 	for boss_round in boss_schedule.keys():
 		if boss_round <= current_round - 50 and boss_round in bosses_killed:
@@ -1081,8 +1138,79 @@ func try_spawn_elite():
 		var info = boss_schedule[template_round].duplicate()
 		info["is_elite"] = true
 		info["hp_mult"] = 1
-		spawn_boss(info)
+		var col = find_clear_boss_footprint(info["w"], info["h"])
+		if col >= 0:
+			spawn_boss_at(info, col)
+			active_elites += 1
+		else:
+			# Defer — pre-reserve a top-row strip so space opens up
+			defer_elite(info)
+
+func defer_elite(info: Dictionary):
+	pending_elite_info = info
+	pending_elite_rounds_waited = 0
+	reserved_top_cols = pick_reservation_strip(info["w"])
+
+func try_spawn_pending_elite():
+	if pending_elite_info == null:
+		return
+	var info = pending_elite_info
+	var col = find_clear_boss_footprint(info["w"], info["h"])
+	if col >= 0:
+		spawn_boss_at(info, col)
 		active_elites += 1
+		pending_elite_info = null
+		reserved_top_cols = []
+		pending_elite_rounds_waited = 0
+		return
+	pending_elite_rounds_waited += 1
+	if pending_elite_rounds_waited >= MAX_PENDING_ELITE_ROUNDS:
+		pending_elite_info = null
+		reserved_top_cols = []
+		pending_elite_rounds_waited = 0
+	else:
+		# Refresh reservation in case existing strip was overrun by destruction shifts
+		reserved_top_cols = pick_reservation_strip(info["w"])
+
+func find_clear_boss_footprint(w: int, h: int) -> int:
+	var occupied = get_occupied_cells()
+	var candidates = []
+	var max_col = grid_cols - w
+	for col in range(max_col + 1):
+		var clear = true
+		for dx in range(w):
+			for dy in range(h):
+				if Vector2(col + dx, dy) in occupied:
+					clear = false
+					break
+			if not clear:
+				break
+		if clear:
+			candidates.append(col)
+	if candidates.is_empty():
+		return -1
+	return candidates[randi() % candidates.size()]
+
+func pick_reservation_strip(w: int) -> Array:
+	# Choose a contiguous w-cell strip in row 0 that isn't currently occupied.
+	var occupied = get_occupied_cells()
+	var candidates = []
+	var max_col = grid_cols - w
+	for col in range(max_col + 1):
+		var ok = true
+		for dx in range(w):
+			if Vector2(col + dx, 0) in occupied:
+				ok = false
+				break
+		if ok:
+			candidates.append(col)
+	if candidates.is_empty():
+		return []
+	var start = candidates[randi() % candidates.size()]
+	var strip = []
+	for dx in range(w):
+		strip.append(start + dx)
+	return strip
 
 func try_spawn_rainbow():
 	if rainbow_on_board:
@@ -1093,7 +1221,7 @@ func try_spawn_rainbow():
 		var occupied = get_occupied_cells()
 		var available = []
 		for c in range(grid_cols):
-			if Vector2(c, 0) not in occupied:
+			if Vector2(c, 0) not in occupied and c not in reserved_top_cols:
 				available.append(c)
 		if available.size() > 0:
 			var col = available[randi() % available.size()]
@@ -1103,6 +1231,10 @@ func try_spawn_rainbow():
 			rainbow_on_board = true
 
 func spawn_boss(info: Dictionary):
+	var max_col = grid_cols - info["w"]
+	spawn_boss_at(info, randi_range(0, max(0, max_col)))
+
+func spawn_boss_at(info: Dictionary, col: int):
 	var boss = BOSS_BRICK_SCENE.instantiate()
 	boss.grid_width = info["w"]
 	boss.grid_height = info["h"]
@@ -1127,8 +1259,6 @@ func spawn_boss(info: Dictionary):
 		boss.has_shield = true
 		boss.shield_hp = info["shield"]
 		boss.shield_max = info["shield"]
-	var max_col = grid_cols - info["w"]
-	var col = randi_range(0, max(0, max_col))
 	var x = grid_start_x + col * cell_width + (info["w"] - 1) * cell_width / 2.0
 	var y = grid_start_y + (info["h"] - 1) * cell_height / 2.0
 	boss.position = Vector2(x, y)
@@ -1267,7 +1397,7 @@ func spawn_round_bricks_at_row0() -> Array:
 	var attempts = 0
 	while columns.size() < brick_count and attempts < 20:
 		var col = randi_range(0, grid_cols - 1)
-		if col not in columns and Vector2(col, 0) not in occupied:
+		if col not in columns and Vector2(col, 0) not in occupied and col not in reserved_top_cols:
 			columns.append(col)
 		attempts += 1
 	for col in columns:
@@ -1286,7 +1416,7 @@ func spawn_ammo_orbs_at_row0() -> Array:
 	var occupied = get_occupied_cells()
 	var available = []
 	for c in range(grid_cols):
-		if Vector2(c, 0) not in occupied:
+		if Vector2(c, 0) not in occupied and c not in reserved_top_cols:
 			available.append(c)
 	if available.size() > 0:
 		var col = available[randi() % available.size()]
@@ -1523,6 +1653,10 @@ var combo_bar: Node2D = null
 var combo_slow_timer: float = 0.0
 
 func _process(delta):
+	# Re-run trajectory each frame while aiming so it tracks moving/rotating bricks
+	if is_aiming and not is_firing and game_active and not is_sliding and not is_dropping:
+		update_aim_line(last_aim_pos)
+
 	# Combo timer decay (supports temporary slow-down when bricks are hit)
 	if combo_timer > 0:
 		var slow_ratio = clamp(combo_slow_timer / 0.1, 0.0, 1.0)
@@ -1557,7 +1691,94 @@ func on_brick_destroyed():
 		sound_manager.play_combo(combo_count)
 
 	# Check if board is clear
-	call_deferred("check_early_round_end")
+	call_deferred("_check_board_clear_visual")
+
+func _is_board_clear() -> bool:
+	for b in brick_container.get_children():
+		if not is_instance_valid(b):
+			continue
+		if "is_dying" in b and b.is_dying:
+			continue
+		return false
+	for o in orb_container.get_children():
+		if not is_instance_valid(o):
+			continue
+		if "is_dying" in o and o.is_dying:
+			continue
+		return false
+	return true
+
+func _check_board_clear_visual():
+	if board_clear_played or not is_firing:
+		return
+	if not _is_board_clear():
+		return
+	board_clear_played = true
+	play_board_clear()
+	# Kill all balls so the round ends without waiting for them to drift back
+	for ball in ball_container.get_children():
+		if is_instance_valid(ball):
+			ball.queue_free()
+	# Brief delay so the player sees the celebration before the next round
+	var t = create_tween()
+	t.tween_interval(0.55)
+	t.tween_callback(func():
+		if is_firing:
+			end_round()
+	)
+
+func play_board_clear():
+	var rect = ColorRect.new()
+	var mat = ShaderMaterial.new()
+	mat.shader = BOARD_CLEAR_SHADER
+	mat.set_shader_parameter("progress", 0.0)
+	mat.set_shader_parameter("center", Vector2(0.5, 0.5))
+	rect.material = mat
+	rect.color = Color(1, 1, 1, 1)
+	rect.anchor_right = 1.0
+	rect.anchor_bottom = 1.0
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rect.z_index = 100
+	$HUD.add_child(rect)
+	await get_tree().process_frame
+	var sz = rect.size
+	if sz.x > 0 and sz.y > 0:
+		mat.set_shader_parameter("aspect", sz.x / sz.y)
+
+	add_shake(6.0)
+	if sound_manager:
+		sound_manager.play_combo(8)
+
+	var tween = create_tween()
+	tween.tween_method(func(p: float):
+		if is_instance_valid(rect):
+			mat.set_shader_parameter("progress", p)
+	, 0.0, 1.0, 1.1)
+	tween.tween_callback(rect.queue_free)
+
+	# Big celebratory text
+	var label = Label.new()
+	label.text = "BOARD CLEAR!"
+	label.add_theme_font_size_override("font_size", 48)
+	label.add_theme_color_override("font_color", Color(1, 1, 1))
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	label.add_theme_constant_override("outline_size", 6)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.anchor_right = 1.0
+	label.anchor_top = 0.4
+	label.anchor_bottom = 0.4
+	label.offset_top = -30
+	label.offset_bottom = 30
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.z_index = 101
+	label.modulate.a = 0.0
+	$HUD.add_child(label)
+	var ltween = create_tween()
+	ltween.set_parallel(true)
+	ltween.tween_property(label, "modulate:a", 1.0, 0.15)
+	ltween.tween_property(label, "scale", Vector2(1.3, 1.3), 0.7).from(Vector2(0.6, 0.6)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	ltween.chain().tween_property(label, "modulate:a", 0.0, 0.4)
+	ltween.chain().tween_callback(label.queue_free)
 
 
 func check_early_round_end():

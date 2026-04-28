@@ -3,7 +3,7 @@ extends Node2D
 var tube_points: PackedVector2Array = PackedVector2Array()
 var ball_positions: Array = []
 var total_ammo: int = 0
-var balls_in_tube: int = 0
+var balls_in_tube: int = 30
 var tube_color = Color(0.16, 0.18, 0.21, 1.0)
 var tube_inner_color = Color(0.2, 0.22, 0.26, 1.0)
 var ball_color = Color(0.3, 0.55, 0.95)
