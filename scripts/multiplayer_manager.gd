@@ -40,7 +40,6 @@ func _initialize_steam():
 	else:
 		is_on_steam = false
 		print("Steam Failed to Initialize.")
-
 func _process(_delta):
 	if is_on_steam:
 		Steam.run_callbacks()
@@ -49,28 +48,34 @@ func _process(_delta):
 
 func host_steam():
 	if not is_on_steam: return
-	
 	close_connection()
 	using_steam = true
-	# Type 2 = Public, 2 players max
 	Steam.createLobby(Steam.LOBBY_TYPE_PUBLIC, 2)
 
 func _on_lobby_created(result: int, new_lobby_id: int):
-	if result == 1: # 1 = k_EResultOK
+	if result == 1: # k_EResultOK
 		lobby_id = new_lobby_id
 		
+		# 1. Set the metadata so others can find us
 		Steam.setLobbyData(lobby_id, "name", Steam.getPersonaName() + "'s Lofi Room")
 		Steam.setLobbyData(lobby_id, "game", "lofi_brick_breaker")
 		
+		# 2. IMPORTANT: Store the Host's Steam ID in the lobby
+		# Clients need to know WHICH Steam User to connect to, not just the Lobby ID
+		var host_steam_id = Steam.getSteamID()
+		Steam.setLobbyData(lobby_id, "host_steam_id", str(host_steam_id))
+		
 		steam_peer = SteamMultiplayerPeer.new()
 		
-		# FIX: Only 1 argument (lobby_id)
-		var error = steam_peer.create_host(lobby_id)
+		# 3. FIX: create_host(virtual_port)
+		# We use 0 as the virtual port. Do NOT pass lobby_id here.
+		var error = steam_peer.create_host(0)
 		
 		if error == OK:
 			multiplayer.multiplayer_peer = steam_peer
 			is_multiplayer = true
 			connection_succeeded.emit()
+			print("Steam Host set on virtual port 0")
 		else:
 			print("Steam Host Error: ", error)
 			connection_failed.emit()
@@ -80,10 +85,22 @@ func _on_lobby_created(result: int, new_lobby_id: int):
 func join_steam_lobby(id: int):
 	close_connection()
 	using_steam = true
+	
+	# 1. Get the Host's Steam ID from the lobby metadata
+	# We need the user's ID to establish the P2P connection
+	Steam.requestLobbyData(id)
+	# We wait a tiny bit for data or just pull it if it's already there from the search
+	var host_steam_id = Steam.getLobbyData(id, "host_steam_id").to_int()
+	
+	if host_steam_id == 0:
+		print("Failed to get host Steam ID from lobby")
+		connection_failed.emit()
+		return
+
 	steam_peer = SteamMultiplayerPeer.new()
 	
-	# FIX: Only 1 argument (lobby_id)
-	var error = steam_peer.create_client(id)
+	# 2. FIX: create_client(host_id, virtual_port)
+	var error = steam_peer.create_client(host_steam_id, 0)
 	
 	if error == OK:
 		multiplayer.multiplayer_peer = steam_peer
@@ -91,6 +108,7 @@ func join_steam_lobby(id: int):
 		lobby_id = id
 		connection_succeeded.emit()
 	else:
+		print("Steam Join Error: ", error)
 		connection_failed.emit()
 
 # --- IP / ENET LOGIC ---
@@ -133,6 +151,10 @@ func close_connection():
 	is_multiplayer = false
 	lobby_id = 0
 
+func open_invite_dialog():
+	if is_on_steam and lobby_id != 0:
+		Steam.activateGameOverlayInviteDialog(lobby_id)
+
 func _on_peer_connected(id):
 	if multiplayer.is_server():
 		start_game.rpc()
@@ -158,11 +180,3 @@ func _on_lobby_join_requested(id: int, _friend: int):
 @rpc("authority", "call_local", "reliable")
 func start_game():
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
-
-	
-func open_invite_dialog():
-	if is_on_steam and lobby_id != 0:
-		# This opens the Steam Overlay specifically to the "Invite Friends" list
-		Steam.activateGameOverlayInviteDialog(lobby_id)
-	else:
-		print("Cannot invite: Not in a Steam lobby or Steam not active.")
