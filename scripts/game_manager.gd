@@ -14,6 +14,7 @@ const PICKUP_SCENE = preload("res://scenes/pickup.tscn")
 const PLAYER_CONTROLLER_SCENE = preload("res://scenes/player_controller.tscn")
 const SAVE_PATH = "user://highscore.save"
 
+
 @onready var brick_container = $BrickContainer
 @onready var ball_container = $BallContainer
 @onready var orb_container = $OrbContainer
@@ -49,6 +50,10 @@ var settings_menu: Node = null
 @onready var nuke_button = $HUD/PowerupBar/NukeButton
 @onready var nuke_name_label = $HUD/PowerupBar/NukeButton/NukeLabel
 @onready var nuke_label = $HUD/PowerupBar/NukeButton/NukeStatus
+
+
+var _invasion_mgr: Node = null
+var _invasion_paddle: Node = null
 
 var players: Dictionary = {}
 
@@ -159,6 +164,45 @@ func broadcast_vfx(effect: String, pos: Vector2, data: Dictionary = {}):
 	else:
 		play_vfx(effect, pos, data)
 
+func _start_invasion_mode() -> void:
+	# Clear any classic bricks/orbs spawned before invasion mode was checked
+	for b in brick_container.get_children():
+		b.queue_free()
+	for o in orb_container.get_children():
+		o.queue_free()
+
+	var mgr_script: Script = load("res://scripts/invasion.gd")
+	_invasion_mgr = Node.new()
+	_invasion_mgr.set_script(mgr_script)
+	add_child(_invasion_mgr)
+	_invasion_mgr.launcher_hit.connect(_on_invasion_launcher_hit)
+	_invasion_mgr.invasion_over.connect(_on_invasion_over)
+	_invasion_mgr.wave_cleared.connect(_on_invasion_wave_cleared)
+	_invasion_mgr.start(brick_container, get_node("HUD"))
+
+	var pad_script: Script = load("res://scripts/invasion_paddle.gd")
+	_invasion_paddle = Node2D.new()
+	_invasion_paddle.set_script(pad_script)
+	add_child(_invasion_paddle)
+	_invasion_paddle.start(brick_container, get_node("HUD"))  # ← add this line
+ 
+# 3. Wire these handlers wherever your existing game-over / round logic lives:
+ 
+func _on_invasion_launcher_hit(damage: int) -> void:
+	# Hook into your existing launcher HP / shake system
+	add_shake(6.0)
+	# TODO: reduce launcher HP, update HUD, etc.
+	print("Launcher hit! Damage: ", damage)
+ 
+func _on_invasion_over() -> void:
+	# Same path as bricks-reaching-bottom in classic mode
+	game_over()
+ 
+func _on_invasion_wave_cleared() -> void:
+	# Optional: play a fanfare, award bonus score, etc.
+	print("Wave cleared!")
+ 
+
 func _ready():
 	grid_start_x = arena_left + cell_width / 2.0
 	grid_start_y = arena_top + cell_height / 2.0
@@ -225,22 +269,23 @@ func _ready():
 	railgun_cooldown_max = max(1, 8 - Progression.get_cooldown_reduction())
 	burn_cooldown_max = max(1, 5 - Progression.get_cooldown_reduction())
 
-	if not MP.is_client():
+	if not MP.is_client() and not GMode.is_invasion():
 		spawn_round_bricks_at_row0()
 		spawn_ammo_orbs_at_row0()
 
-	is_sliding = true
-	slide_progress = 0.0
-	for brick in brick_container.get_children():
-		if brick is Node2D:
-			brick.set_meta("slide_from", brick.position.y)
-			brick.set_meta("slide_to", brick.position.y + cell_height)
-			brick.set_meta("first_round", true)
-	for orb in orb_container.get_children():
-		if orb is Node2D:
-			orb.set_meta("slide_from", orb.position.y)
-			orb.set_meta("slide_to", orb.position.y + cell_height)
-			orb.set_meta("first_round", true)
+	if not GMode.is_invasion():
+		is_sliding = true
+		slide_progress = 0.0
+		for brick in brick_container.get_children():
+			if brick is Node2D:
+				brick.set_meta("slide_from", brick.position.y)
+				brick.set_meta("slide_to", brick.position.y + cell_height)
+				brick.set_meta("first_round", true)
+		for orb in orb_container.get_children():
+			if orb is Node2D:
+				orb.set_meta("slide_from", orb.position.y)
+				orb.set_meta("slide_to", orb.position.y + cell_height)
+				orb.set_meta("first_round", true)
 
 	# Apply lofi card stylebox to the HUD level card and gear/speed buttons
 	_apply_hud_styling()
@@ -277,6 +322,9 @@ func _ready():
 		if settings_menu:
 			settings_menu.toggle_menu()
 	)
+
+	if GMode.is_invasion():
+		_start_invasion_mode()
 
 func setup_multiplayer():
 	print("[NET] Setting up multiplayer. Server: ", multiplayer.is_server(), " ID: ", multiplayer.get_unique_id())
@@ -1361,8 +1409,12 @@ func end_round():
 		pending_ammo = 0
 	
 	update_launcher_type()
-	spawn_round_content()
-	start_slide_existing()
+
+	if not GMode.is_invasion():
+		spawn_round_content()
+		start_slide_existing()
+	else:
+		after_drop_complete()
 
 func spawn_guardians_if_needed():
 	for brick in brick_container.get_children():
@@ -1874,6 +1926,14 @@ func game_over():
 	final_score_label.visible = true
 	restart_button.visible = true
 
+	if _invasion_mgr:
+		_invasion_mgr.stop()
+		_invasion_mgr.queue_free()
+		_invasion_mgr = null
+	if _invasion_paddle:
+		_invasion_paddle.cleanup()
+		_invasion_paddle.queue_free()
+		_invasion_paddle = null
 func add_score(points: int):
 	var multiplied = points * max(1, combo_count)
 	score += multiplied

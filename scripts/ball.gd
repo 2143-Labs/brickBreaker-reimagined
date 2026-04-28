@@ -108,12 +108,25 @@ func _physics_process(delta):
 		if trail_points.size() > max_trail_points:
 			trail_points.pop_front()
 
+
+	if direction.y > 0:
+		collision_mask = 1 | 2 # Detect Layer 1 AND Layer 2 (3)
+	else:
+		collision_mask = 1     # Only detect Layer 1 (pass through paddle)
+
 	velocity = direction * speed
 	var collision = move_and_collide(velocity * delta)
 
 	if collision:
 		direction = direction.bounce(collision.get_normal())
 		var collider = collision.get_collider()
+		
+		# If we hit the paddle, we can add some spin/influence
+		if collider.is_in_group("paddle"):
+			var diff = position.x - collider.global_position.x
+			direction.x += diff * 0.02 # Subtle direction change based on where it hit
+			direction = direction.normalized()
+
 		if collider.has_method("take_damage"):
 			collider.take_damage(int(damage * damage_multiplier), direction)
 			if applies_burn and collider.has_method("add_burn_stack"):

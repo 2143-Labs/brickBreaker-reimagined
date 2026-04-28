@@ -59,11 +59,25 @@ func setup():
 
 func _process(_delta):
 	# Automatically draw the aim line if the synced direction changes
-	if synced_aim_dir != _last_drawn_dir:
+	if synced_aim_dir != _last_drawn_dir or GMode.is_invasion():
 		_draw_aim_line(synced_aim_dir)
 		_last_drawn_dir = synced_aim_dir
 
 func _physics_process(_delta):
+	# In invasion mode, keep launcher pinned to the paddle
+	if GMode.is_invasion() and game_manager and game_manager._invasion_paddle:
+		var pad = game_manager._invasion_paddle
+		if pad.paddle_body and is_instance_valid(pad.paddle_body):
+			var px = pad.paddle_body.position.x
+			launcher.position.x = px
+			launch_point.x = px
+			preview_ball.position.x = px
+			# Snap magazine entrance directly — no tween animation
+			magazine.entrance_x = px
+			magazine.target_entrance_x = px
+			magazine.shift_from_x = px
+			magazine.is_shifting = false
+			magazine.build_tube_path()
 	if is_spawning and balls_to_spawn > 0:
 		if can_spawn_ball():
 			do_launch_ball(fire_dir)
@@ -156,14 +170,11 @@ func handle_ball_landed(x_pos: float, p_id: int):
 	var nx = clamp(x_pos, arena_left + 15, arena_right - 15)
 	if not first_ball_returned:
 		first_ball_returned = true
-		if MP.is_server():
-			animate_launcher.rpc(nx)
-		elif not MP.is_multiplayer:
-			animate_launcher(nx)
-			
-	if game_manager:
-		game_manager._on_ball_landed(x_pos, p_id)
-
+		if not GMode.is_invasion():  # ← don't auto-reposition in invasion
+			if MP.is_server():
+				animate_launcher.rpc(nx)
+			elif not MP.is_multiplayer:
+				animate_launcher(nx)
 func handle_ball_returned(p_id: int):
 	if MP.is_server():
 		sync_magazine_return.rpc()
