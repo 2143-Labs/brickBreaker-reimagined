@@ -10,6 +10,7 @@ var ball_color = Color(0.3, 0.55, 0.95)
 var modifier_tint = Color(1, 1, 1, 0)
 var tube_width: float = 22.0
 var ball_spacing_in_tube: float = 15.0
+var player_id: int = 1
 
 var entrance_x: float = 195.0
 var target_entrance_x: float = 195.0
@@ -76,6 +77,7 @@ func get_direction_at_distance(dist: float) -> Vector2:
 			return (tube_points[i + 1] - tube_points[i]).normalized()
 		accumulated += seg_len
 	return Vector2.DOWN
+
 func recalculate_ball_positions():
 	ball_positions.clear()
 	for i in range(total_ammo):
@@ -175,6 +177,8 @@ func _draw():
 		d += 25.0
 
 	# Balls
+	var p_ball_color = ball_color if player_id == 1 else Color(0.95, 0.35, 0.4)
+
 	for i in range(balls_in_tube):
 		if i < ball_positions.size():
 			var pos = get_point_at_distance(ball_positions[i])
@@ -188,13 +192,13 @@ func _draw():
 					elif t < 0.6: scale_t = lerp(1.3, 0.9, (t - 0.4) / 0.2)
 					else: scale_t = lerp(0.9, 1.0, (t - 0.6) / 0.4)
 					var r = 7.0 * scale_t
-					var c = Color(0.3, 0.8, 0.4).lerp(ball_color, t)
+					var c = Color(0.3, 0.8, 0.4).lerp(p_ball_color, t)
 					draw_circle(pos, r, c)
 					if t < 0.5:
 						draw_circle(pos, r + 4, Color(0.3, 0.8, 0.4, 0.3 * (1.0 - t * 2)))
 					break
 			if not is_plop:
-				draw_circle(pos, 7, ball_color)
+				draw_circle(pos, 7, p_ball_color)
 				if modifier_tint.a > 0:
 					draw_circle(pos, 7, modifier_tint)
 				draw_circle(pos + Vector2(-2, -2), 2.5, Color(0.5, 0.7, 1.0, 0.3))

@@ -314,6 +314,40 @@ func _ready():
 			settings_menu.toggle_menu()
 	)
 
+
+	# --- CO-OP VISIBILITY ISOLATION ---
+	if MultiplayerManager.is_multiplayer:
+		launcher.player_id = 1
+		magazine.player_id = 1
+		if launcher_2: launcher_2.player_id = 2
+		if magazine_2: magazine_2.player_id = 2
+		
+		var am_server = multiplayer.is_server()
+		
+		# BOTH players can always see BOTH guns rotating and firing
+		if launcher: launcher.visible = true
+		if launcher_2: launcher_2.visible = true
+
+		if aim_line: aim_line.visible = true
+		if aim_line_2: aim_line_2.visible = true
+		if trajectory_preview: trajectory_preview.visible = true
+		if trajectory_preview_2: trajectory_preview_2.visible = true
+
+		if preview_ball_1: preview_ball_1.visible = true
+		if preview_ball_2: preview_ball_2.visible = true
+
+		# Only show YOUR OWN magazine, and ammo labels
+		if magazine: magazine.visible = am_server
+		if ammo_label: ammo_label.visible = am_server
+
+
+		
+		if magazine_2: magazine_2.visible = not am_server
+		if ammo_label_2: ammo_label_2.visible = not am_server
+
+
+
+
 func setup_multiplayer():
 	print("[NET] Setting up multiplayer. Server: ", multiplayer.is_server(), " ID: ", multiplayer.get_unique_id())
 	
@@ -452,17 +486,32 @@ func _physics_process(delta):
 				item["orb"].position.y = lerp(float(item["from_y"]), float(item["to_y"]), t)
 
 func _process(delta):
-	# Re-run trajectory each frame while aiming so it tracks moving/rotating bricks
+	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+		update_hud()
+		var total = ammo + bonus_ammo
+		if magazine.total_ammo != total:
+			magazine.set_ammo(total)
+		if magazine_2 and magazine_2.total_ammo != total:
+			magazine_2.set_ammo(total)
+
 	var my_p_id = 1
 	if MultiplayerManager.is_multiplayer and not multiplayer.is_server():
 		my_p_id = 2
 	var my_fired = p1_fired if my_p_id == 1 else p2_fired
+	
 	if is_aiming and not my_fired and game_active and not is_sliding and not is_dropping:
 		var lp = launch_point_1 if my_p_id == 1 else launch_point_2
 		var dir = (last_aim_pos - lp).normalized()
 		draw_aim_line_for_player(my_p_id, dir)
+	elif my_fired:
+		# Enforce empty aim line while waiting for next turn
+		if my_p_id == 1:
+			if aim_line: aim_line.clear_points()
+			if trajectory_preview: trajectory_preview.clear_points()
+		else:
+			if aim_line_2: aim_line_2.clear_points()
+			if trajectory_preview_2: trajectory_preview_2.clear_points()
 
-	# Combo timer decay (supports temporary slow-down when bricks are hit)
 	if combo_timer > 0:
 		if not MultiplayerManager.is_multiplayer or is_multiplayer_authority():
 			var slow_ratio = clamp(combo_slow_timer / 0.1, 0.0, 1.0)
@@ -477,7 +526,6 @@ func _process(delta):
 	elif combo_bar and combo_bar.visible:
 		combo_bar.visible = false
 
-	# Client-side Visual Flash Monitor (Checks if health replicates downward and triggers flash)
 	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
 		for brick in brick_container.get_children():
 			if not brick is Node2D: continue
@@ -486,7 +534,6 @@ func _process(delta):
 				var brick_id = brick.get_instance_id()
 				if last_brick_healths.has(brick_id):
 					if current_hp < last_brick_healths[brick_id]:
-						# Health decreased! Play VFX and Sound on client!
 						if brick.has_method("update_display"):
 							brick.update_display()
 						if brick.has_node("Sprite"):
@@ -885,6 +932,20 @@ func draw_aim_line_for_player(p_id: int, direction: Vector2):
 
 # ---- FIRING ----
 
+@rpc("authority", "call_local", "reliable")
+func sync_magazine_fire(p_id: int):
+	if p_id == 1:
+		magazine.fire_ball()
+	elif magazine_2:
+		magazine_2.fire_ball()
+
+@rpc("authority", "call_local", "reliable")
+func sync_magazine_return(p_id: int):
+	if p_id == 1:
+		magazine.return_ball()
+	elif magazine_2:
+		magazine_2.return_ball()
+
 func start_firing_for_player(p_id: int, dir: Vector2):
 	var total_ammo = ammo + bonus_ammo
 	if ammo_multiplier > 1.0:
@@ -901,7 +962,7 @@ func start_firing_for_player(p_id: int, dir: Vector2):
 		p1_first_ball_returned = false
 		p1_balls_in_play = 0
 		if preview_ball_1: preview_ball_1.visible = false
-		if ammo_label: ammo_label.visible = false
+		if ammo_label and (not MultiplayerManager.is_multiplayer or multiplayer.is_server()): ammo_label.visible = false
 		if aim_line: aim_line.clear_points()
 		if trajectory_preview: trajectory_preview.clear_points()
 	else:
@@ -912,7 +973,7 @@ func start_firing_for_player(p_id: int, dir: Vector2):
 		p2_first_ball_returned = false
 		p2_balls_in_play = 0
 		if preview_ball_2: preview_ball_2.visible = false
-		if ammo_label_2: ammo_label_2.visible = false
+		if ammo_label_2 and (not MultiplayerManager.is_multiplayer or not multiplayer.is_server()): ammo_label_2.visible = false
 		if aim_line_2: aim_line_2.clear_points()
 		if trajectory_preview_2: trajectory_preview_2.clear_points()
 		
@@ -955,18 +1016,24 @@ func start_firing_for_player(p_id: int, dir: Vector2):
 				if p_id == 1:
 					p1_balls_in_play += 1
 					if p_type == ActivePowerup.RAILGUN:
-						for i in range(p1_balls_to_spawn): magazine.fire_ball()
+						for i in range(p1_balls_to_spawn): 
+							if MultiplayerManager.is_multiplayer and multiplayer.is_server(): sync_magazine_fire.rpc(1)
+							else: sync_magazine_fire(1)
 						p1_balls_to_spawn = 0
 					else:
-						magazine.fire_ball()
+						if MultiplayerManager.is_multiplayer and multiplayer.is_server(): sync_magazine_fire.rpc(1)
+						else: sync_magazine_fire(1)
 						p1_balls_to_spawn -= 1
 				else:
 					p2_balls_in_play += 1
 					if p_type == ActivePowerup.RAILGUN:
-						for i in range(p2_balls_to_spawn): if magazine_2: magazine_2.fire_ball()
+						for i in range(p2_balls_to_spawn): 
+							if MultiplayerManager.is_multiplayer and multiplayer.is_server(): sync_magazine_fire.rpc(2)
+							else: sync_magazine_fire(2)
 						p2_balls_to_spawn = 0
 					else:
-						if magazine_2: magazine_2.fire_ball()
+						if MultiplayerManager.is_multiplayer and multiplayer.is_server(): sync_magazine_fire.rpc(2)
+						else: sync_magazine_fire(2)
 						p2_balls_to_spawn -= 1
 						
 				set_cooldown(p_type)
@@ -993,11 +1060,13 @@ func do_launch_ball(p_id: int, dir: Vector2):
 	
 	if p_id == 1:
 		p1_balls_in_play += 1
-		magazine.fire_ball()
 	else:
 		p2_balls_in_play += 1
-		if magazine_2: magazine_2.fire_ball()
 
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		sync_magazine_fire.rpc(p_id)
+	else:
+		sync_magazine_fire(p_id)
 # ---- EXPLOSION ----
 
 func do_explosion(center: Vector2, radius: float):
@@ -1274,10 +1343,13 @@ func _on_ball_landed(x_pos: float, p_id: int):
 func _on_ball_returned(p_id: int):
 	if p_id == 1:
 		p1_balls_in_play -= 1
-		magazine.return_ball()
 	else:
 		p2_balls_in_play -= 1
-		if magazine_2: magazine_2.return_ball()
+		
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		sync_magazine_return.rpc(p_id)
+	else:
+		sync_magazine_return(p_id)
 		
 	check_round_end()
 
@@ -1732,16 +1804,33 @@ func finish_drop():
 func after_drop_complete():
 	update_hud()
 	update_ammo_label_position()
-	ammo_label.visible = true
-	if ammo_label_2: ammo_label_2.visible = true
 	
-	if preview_ball_1:
-		preview_ball_1.position = launch_point_1
-		preview_ball_1.visible = true
+	if not MultiplayerManager.is_multiplayer or multiplayer.is_server():
+		if ammo_label: ammo_label.visible = true
+		if preview_ball_1:
+			preview_ball_1.position = launch_point_1
+			preview_ball_1.visible = true
+			
+	if not MultiplayerManager.is_multiplayer or not multiplayer.is_server():
+		if ammo_label_2: ammo_label_2.visible = true
+		if preview_ball_2:
+			preview_ball_2.position = launch_point_2
+			preview_ball_2.visible = true
+		
+	sound_manager.play_reload()
+	update_launcher_type()
+	
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		_client_after_drop_rpc.rpc()
+
+@rpc("authority", "call_remote")
+func _client_after_drop_rpc():
+	update_hud()
+	update_ammo_label_position()
+	if ammo_label_2: ammo_label_2.visible = true
 	if preview_ball_2:
 		preview_ball_2.position = launch_point_2
 		preview_ball_2.visible = true
-		
 	sound_manager.play_reload()
 	update_launcher_type()
 
@@ -1857,6 +1946,10 @@ func spawn_ammo_popup(count: int):
 
 @rpc("authority", "call_local")
 func _spawn_ammo_popup_rpc(count: int):
+	for i in range(count):
+		magazine.add_ball_plop()
+		if magazine_2: magazine_2.add_ball_plop()
+		
 	var tier = min(count, 5)
 	var label = Label.new()
 	label.text = "+%d" % count
@@ -1880,7 +1973,7 @@ func _spawn_ammo_popup_rpc(count: int):
 		label.scale = Vector2(1.3, 1.3)
 		tween.tween_property(label, "scale", Vector2(1.0, 1.0), 0.3).set_ease(Tween.EASE_OUT)
 	tween.chain().tween_callback(label.queue_free)
-
+	
 func spawn_modifier_popup(text: String, color: Color):
 	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
 		_spawn_modifier_popup_rpc.rpc(text, color)
