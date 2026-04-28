@@ -1,11 +1,7 @@
 extends Node2D
 
 const BRICK_SCENE = preload("res://scenes/brick.tscn")
-const BALL_SCENE = preload("res://scenes/ball.tscn")
 const AMMO_ORB_SCENE = preload("res://scenes/ammo_orb.tscn")
-const EXPLOSIVE_BALL_SCENE = preload("res://scenes/explosive_ball.tscn")
-const RAILGUN_BALL_SCENE = preload("res://scenes/railgun_ball.tscn")
-const BURN_BALL_SCENE = preload("res://scenes/burn_ball.tscn")
 const BOSS_BRICK_SCENE = preload("res://scenes/boss_brick.tscn")
 const GUARDIAN_BRICK_SCENE = preload("res://scenes/guardian_brick.tscn")
 const RAINBOW_BRICK_SCENE = preload("res://scenes/rainbow_brick.tscn")
@@ -15,6 +11,7 @@ const DIAGONAL_BRICK_SCENE = preload("res://scenes/diagonal_brick.tscn")
 const BOARD_CLEAR_SHADER = preload("res://assets/shaders/board_clear.gdshader")
 const OIL_BARREL_SCENE = preload("res://scenes/oil_barrel.tscn")
 const PICKUP_SCENE = preload("res://scenes/pickup.tscn")
+const PLAYER_CONTROLLER_SCENE = preload("res://scenes/player_controller.tscn")
 const SAVE_PATH = "user://highscore.save"
 
 @onready var brick_container = $BrickContainer
@@ -22,11 +19,6 @@ const SAVE_PATH = "user://highscore.save"
 @onready var orb_container = $OrbContainer
 @onready var particle_container = $ParticleContainer
 @onready var sound_manager = $SoundManager
-
-@onready var launcher = $Launcher
-@onready var magazine = $Magazine
-@onready var aim_line = $AimLine
-@onready var trajectory_preview = $TrajectoryPreview
 
 @onready var ammo_label = $HUD/AmmoLabel
 @onready var round_label = $HUD/RoundLabel
@@ -58,33 +50,7 @@ var settings_menu: Node = null
 @onready var nuke_name_label = $HUD/PowerupBar/NukeButton/NukeLabel
 @onready var nuke_label = $HUD/PowerupBar/NukeButton/NukeStatus
 
-# Co-Op Extensions
-var launcher_2: Node2D = null
-var magazine_2: Node2D = null
-var aim_line_2: Line2D = null
-var trajectory_preview_2: Line2D = null
-var ammo_label_2: Label = null
-var preview_ball_1: Node2D = null
-var preview_ball_2: Node2D = null
-
-var p1_fired: bool = false
-var p2_fired: bool = false
-var p1_balls_in_play: int = 0
-var p2_balls_in_play: int = 0
-var p1_first_ball_returned: bool = false
-var p2_first_ball_returned: bool = false
-
-var launch_point_1: Vector2
-var launch_point_2: Vector2
-var next_launch_x_1: float = 150.0
-var next_launch_x_2: float = 240.0
-
-var p1_is_spawning: bool = false
-var p2_is_spawning: bool = false
-var p1_balls_to_spawn: int = 0
-var p2_balls_to_spawn: int = 0
-var p1_fire_dir: Vector2
-var p2_fire_dir: Vector2
+var players: Dictionary = {}
 
 var current_round: int = 1
 var score: int = 0
@@ -95,24 +61,12 @@ var bonus_ammo: int = 0
 var pending_ammo: int = 0
 var is_aiming: bool = false
 var last_aim_pos: Vector2 = Vector2.ZERO
-var is_firing: bool = false
 
 var railgun_deaths_pending: int = 0
 var railgun_total_kills: int = 0
 var railgun_active: bool = false
 
-var fire_direction: Vector2
-var balls_in_play: int = 0
-var preview_ball: Node2D = null
 var game_active: bool = true
-var first_ball_returned: bool = false
-var first_ball_missed: bool = false
-var next_launch_x: float = 195.0
-
-var is_spawning: bool = false
-var balls_to_spawn: int = 0
-var spawn_distance_accumulator: float = 0.0
-var ball_spacing: float = 20.0
 
 var speed_levels = [1.0, 2.0, 4.0]
 var current_speed_idx: int = 0
@@ -205,47 +159,48 @@ func _ready():
 	arena_bottom = arena_top + max_rows * cell_height
 	original_position = position
 	
-	launch_point_1 = Vector2(150.0, arena_bottom + 20)
-	launch_point_2 = Vector2(240.0, arena_bottom + 20)
-	next_launch_x_1 = 150.0
-	next_launch_x_2 = 240.0
-	
-	launcher.position = launch_point_1
-	magazine.position = Vector2(0, launch_point_1.y + 25)
-	magazine.entrance_x = launch_point_1.x
-	magazine.target_entrance_x = launch_point_1.x
-	magazine.set_ammo(ammo + bonus_ammo)
+	# Remove old UI elements embedded directly in the main scene 
+	# (Since they're instantiated via player controller now)
+	for node_name in ["Launcher", "Magazine", "AimLine", "TrajectoryPreview"]:
+		if has_node(node_name):
+			get_node(node_name).queue_free()
 
 	if MultiplayerManager.is_multiplayer:
 		setup_multiplayer()
-		launcher_2 = launcher.duplicate()
-		add_child(launcher_2)
-		launcher_2.position = launch_point_2
-		
-		magazine_2 = magazine.duplicate()
-		add_child(magazine_2)
-		magazine_2.position = Vector2(0, launch_point_2.y + 25)
-		magazine_2.entrance_x = launch_point_2.x
-		magazine_2.target_entrance_x = launch_point_2.x
-		magazine_2.build_tube_path()
-		magazine_2.set_ammo(ammo + bonus_ammo)
-		
-		aim_line_2 = aim_line.duplicate()
-		add_child(aim_line_2)
-		
-		trajectory_preview_2 = trajectory_preview.duplicate()
-		add_child(trajectory_preview_2)
-		
-		ammo_label_2 = ammo_label.duplicate()
+
+	# Create Players (P1 Always exists, P2 only in Multiplayer)
+	var pc1 = PLAYER_CONTROLLER_SCENE.instantiate()
+	pc1.name = "PlayerController1"
+	pc1.player_id = 1
+	pc1.game_manager = self
+	pc1.ball_container = ball_container
+	pc1.ammo_label = ammo_label
+	pc1.arena_left = arena_left
+	pc1.arena_right = arena_right
+	pc1.launch_point = Vector2(150.0 if MultiplayerManager.is_multiplayer else 195.0, arena_bottom + 20)
+	pc1.next_launch_x = pc1.launch_point.x
+	add_child(pc1)
+	players[1] = pc1
+
+	if MultiplayerManager.is_multiplayer:
+		var pc2 = PLAYER_CONTROLLER_SCENE.instantiate()
+		pc2.name = "PlayerController2"
+		pc2.player_id = 2
+		pc2.game_manager = self
+		pc2.ball_container = ball_container
+		var ammo_label_2 = ammo_label.duplicate()
 		$HUD.add_child(ammo_label_2)
-	else:
-		# Singleplayer uses center spawn
-		launch_point_1 = Vector2(195.0, arena_bottom + 20)
-		next_launch_x_1 = 195.0
-		launcher.position = launch_point_1
-		magazine.entrance_x = launch_point_1.x
-		magazine.target_entrance_x = launch_point_1.x
-		magazine.build_tube_path()
+		pc2.ammo_label = ammo_label_2
+		pc2.arena_left = arena_left
+		pc2.arena_right = arena_right
+		pc2.launch_point = Vector2(240.0, arena_bottom + 20)
+		pc2.next_launch_x = pc2.launch_point.x
+		add_child(pc2)
+		players[2] = pc2
+
+	for p in players.values():
+		p.setup()
+		p.set_ammo(ammo + bonus_ammo)
 
 	add_to_group("game_manager")
 
@@ -284,9 +239,9 @@ func _ready():
 	# Apply lofi card stylebox to the HUD level card and gear/speed buttons
 	_apply_hud_styling()
 	update_hud()
-	update_ammo_label_position()
+	for p in players.values():
+		p.update_ammo_label_position()
 	update_all_powerup_ui()
-	create_preview_balls()
 	queue_redraw()
 
 	# Combo bar — add to HUD so it always renders above the game layer
@@ -317,37 +272,6 @@ func _ready():
 			settings_menu.toggle_menu()
 	)
 
-
-	# --- CO-OP VISIBILITY ISOLATION ---
-	if MultiplayerManager.is_multiplayer:
-		launcher.player_id = 1
-		magazine.player_id = 1
-		if launcher_2: launcher_2.player_id = 2
-		if magazine_2: magazine_2.player_id = 2
-		
-		var am_server = multiplayer.is_server()
-		
-		# BOTH players can always see BOTH guns rotating and firing
-		if launcher: launcher.visible = true
-		if launcher_2: launcher_2.visible = true
-
-		if aim_line: aim_line.visible = true
-		if aim_line_2: aim_line_2.visible = true
-		if trajectory_preview: trajectory_preview.visible = true
-		if trajectory_preview_2: trajectory_preview_2.visible = true
-
-		if preview_ball_1: preview_ball_1.visible = true
-		if preview_ball_2: preview_ball_2.visible = true
-
-		# Only show YOUR OWN magazine, and ammo labels
-		if magazine: magazine.visible = am_server
-		if ammo_label: ammo_label.visible = am_server
-
-
-		
-		if magazine_2: magazine_2.visible = not am_server
-		if ammo_label_2: ammo_label_2.visible = not am_server
-
 func setup_multiplayer():
 	print("[NET] Setting up multiplayer. Server: ", multiplayer.is_server(), " ID: ", multiplayer.get_unique_id())
 	
@@ -365,14 +289,10 @@ func setup_multiplayer():
 	config.add_property(".:ammo")
 	config.add_property(".:bonus_ammo")
 	config.add_property(".:game_active")
-	config.add_property(".:p1_fired")
-	config.add_property(".:p2_fired")
-	config.add_property(".:launch_point_1")
-	config.add_property(".:launch_point_2")
 	config.add_property(".:combo_count")
 	config.add_property(".:combo_timer")
 	config.add_property(".:nuke_charges")
-	config.add_property(".:burn_round_active") # Added this!
+	config.add_property(".:burn_round_active")
 	sync.replication_config = config
 	add_child(sync)
 	print("[NET] GlobalSynchronizer added")
@@ -445,20 +365,6 @@ func _physics_process(delta):
 		shake_amount = 0.0
 		position = original_position
 		
-	if p1_is_spawning and p1_balls_to_spawn > 0:
-		if can_spawn_ball_for(launch_point_1, 1):
-			do_launch_ball(1, p1_fire_dir)
-			p1_balls_to_spawn -= 1
-			if p1_balls_to_spawn <= 0:
-				p1_is_spawning = false
-
-	if p2_is_spawning and p2_balls_to_spawn > 0:
-		if can_spawn_ball_for(launch_point_2, 2):
-			do_launch_ball(2, p2_fire_dir)
-			p2_balls_to_spawn -= 1
-			if p2_balls_to_spawn <= 0:
-				p2_is_spawning = false
-
 	if is_sliding:
 		slide_progress += delta / slide_duration
 		if slide_progress >= 1.0:
@@ -491,28 +397,23 @@ func _process(delta):
 	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
 		update_hud()
 		var total = ammo + bonus_ammo
-		if magazine.total_ammo != total:
-			magazine.set_ammo(total)
-		if magazine_2 and magazine_2.total_ammo != total:
-			magazine_2.set_ammo(total)
+		for p in players.values():
+			if p.magazine.total_ammo != total:
+				p.magazine.set_ammo(total)
 
 	var my_p_id = 1
 	if MultiplayerManager.is_multiplayer and not multiplayer.is_server():
 		my_p_id = 2
-	var my_fired = p1_fired if my_p_id == 1 else p2_fired
-	
-	if is_aiming and not my_fired and game_active and not is_sliding and not is_dropping:
-		var lp = launch_point_1 if my_p_id == 1 else launch_point_2
-		var dir = (last_aim_pos - lp).normalized()
-		draw_aim_line_for_player(my_p_id, dir)
-	elif my_fired:
-		# Enforce empty aim line while waiting for next turn
-		if my_p_id == 1:
-			if aim_line: aim_line.clear_points()
-			if trajectory_preview: trajectory_preview.clear_points()
-		else:
-			if aim_line_2: aim_line_2.clear_points()
-			if trajectory_preview_2: trajectory_preview_2.clear_points()
+		
+	var my_player = players.get(my_p_id)
+	if my_player:
+		if is_aiming and not my_player.has_fired and game_active and not is_sliding and not is_dropping:
+			var dir = (last_aim_pos - my_player.launch_point).normalized()
+			my_player.synced_aim_dir = dir
+			if MultiplayerManager.is_multiplayer:
+				sync_aim.rpc(dir)
+		elif my_player.has_fired:
+			my_player.clear_aim()
 
 	if combo_timer > 0:
 		if not MultiplayerManager.is_multiplayer or is_multiplayer_authority():
@@ -545,14 +446,6 @@ func _process(delta):
 							tween.tween_property(sprite, "modulate", Color(1, 1, 1, 1), 0.1)
 						sound_manager.play_hit()
 				last_brick_healths[brick_id] = current_hp
-
-func can_spawn_ball_for(lp: Vector2, p_id: int) -> bool:
-	if ball_container.get_child_count() > 0:
-		for ball in ball_container.get_children():
-			if ball.get("player_id") == p_id and is_instance_valid(ball):
-				if ball.position.distance_to(lp) < 1.0:
-					return false
-	return true
 
 func add_shake(amount: float):
 	shake_amount = max(shake_amount, amount)
@@ -590,7 +483,6 @@ func toggle_powerup(powerup: int):
 		active_powerup = powerup
 		sound_manager.play_powerup()
 	update_all_powerup_ui()
-	create_preview_balls()
 	update_launcher_type()
 
 func get_cooldown(powerup: int) -> int:
@@ -729,13 +621,12 @@ func update_launcher_type():
 		ActivePowerup.EXPLOSIVE: t = 1
 		ActivePowerup.RAILGUN: t = 2
 		ActivePowerup.BURN: t = 3
-	launcher.set_type(t)
-	if launcher_2:
-		launcher_2.set_type(t)
+	for p in players.values():
+		p.update_powerup_state(t, damage_multiplier > 1.0)
 
 func _on_nuke_pressed():
-	if launcher:
-		launcher.set_type(4) # NUKE visual briefly
+	if players.has(1):
+		players[1].launcher.set_type(4) # NUKE visual briefly
 	if nuke_charges <= 0 or not game_active or is_sliding or is_dropping:
 		return
 		
@@ -776,64 +667,6 @@ func do_nuke():
 					add_score(brick.get_brick_value())
 				brick.queue_free()
 
-func create_preview_balls():
-	if preview_ball_1: preview_ball_1.queue_free()
-	preview_ball_1 = Node2D.new()
-	preview_ball_1.position = launch_point_1
-	add_child(preview_ball_1)
-	_setup_preview_draw(preview_ball_1, 1)
-	
-	if MultiplayerManager.is_multiplayer:
-		if preview_ball_2: preview_ball_2.queue_free()
-		preview_ball_2 = Node2D.new()
-		preview_ball_2.position = launch_point_2
-		add_child(preview_ball_2)
-		_setup_preview_draw(preview_ball_2, 2)
-
-func _setup_preview_draw(pb: Node2D, p_id: int):
-	var pw = active_powerup
-	var is_pow = damage_multiplier > 1.0
-	pb.draw.connect(func():
-		match pw:
-			ActivePowerup.EXPLOSIVE:
-				pb.draw_circle(Vector2.ZERO, 10, Color(1.0, 0.4, 0.1, 0.3))
-				var inner = Color(1.0, 0.5, 0.15, 0.9) if p_id == 1 else Color(1.0, 0.2, 0.4, 0.9)
-				pb.draw_circle(Vector2.ZERO, 8, inner)
-			ActivePowerup.RAILGUN:
-				pb.draw_circle(Vector2.ZERO, 10, Color(0.2, 0.8, 1.0, 0.2))
-				var glow = Color(0.3, 0.9, 1.0, 0.8) if p_id == 1 else Color(0.9, 0.3, 1.0, 0.8)
-				pb.draw_circle(Vector2.ZERO, 6, glow)
-				pb.draw_circle(Vector2.ZERO, 3, Color(1, 1, 1, 0.9))
-			ActivePowerup.BURN:
-				pb.draw_circle(Vector2.ZERO, 10, Color(0.95, 0.4, 0.1, 0.2))
-				var col = Color(0.95, 0.5, 0.15) if p_id == 1 else Color(0.95, 0.2, 0.3)
-				pb.draw_circle(Vector2.ZERO, 8, col)
-				pb.draw_circle(Vector2.ZERO, 5, Color(1.0, 0.7, 0.2))
-			_:
-				if is_pow:
-					pb.draw_circle(Vector2.ZERO, 10, Color(0.9, 0.2, 0.15, 0.25))
-					pb.draw_circle(Vector2.ZERO, 8, Color(0.85, 0.3, 0.25))
-				elif p_id == 2:
-					pb.draw_circle(Vector2.ZERO, 8, Color(0.95, 0.35, 0.4, 0.9))
-				else:
-					pb.draw_circle(Vector2.ZERO, 8, Color(0.3, 0.55, 0.95, 0.9))
-	)
-	pb.queue_redraw()
-
-func update_ammo_label_position():
-	ammo_label.offset_left = launch_point_1.x + 15
-	ammo_label.offset_right = launch_point_1.x + 75
-	ammo_label.offset_top = launch_point_1.y - 10
-	ammo_label.offset_bottom = launch_point_1.y + 15
-	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	
-	if ammo_label_2:
-		ammo_label_2.offset_left = launch_point_2.x + 15
-		ammo_label_2.offset_right = launch_point_2.x + 75
-		ammo_label_2.offset_top = launch_point_2.y - 10
-		ammo_label_2.offset_bottom = launch_point_2.y + 15
-		ammo_label_2.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-
 # ---- PREVIEW & AIMING ----
 
 func _input(event):
@@ -841,11 +674,9 @@ func _input(event):
 	if MultiplayerManager.is_multiplayer and not multiplayer.is_server():
 		my_p_id = 2
 		
-	var my_fired = p1_fired if my_p_id == 1 else p2_fired
-	if my_fired or not game_active or is_sliding or is_dropping:
+	var my_player = players.get(my_p_id)
+	if not my_player or my_player.has_fired or not game_active or is_sliding or is_dropping:
 		return
-		
-	var my_lp = launch_point_1 if my_p_id == 1 else launch_point_2
 	
 	if event is InputEventMouseButton or event is InputEventScreenTouch:
 		var pressed = event.pressed
@@ -855,227 +686,68 @@ func _input(event):
 				is_aiming = true
 		elif is_aiming:
 			is_aiming = false
-			var dir = (pos - my_lp).normalized()
+			var dir = (pos - my_player.launch_point).normalized()
 			if dir.y < -0.1:
 				if MultiplayerManager.is_multiplayer:
 					request_fire.rpc_id(1, dir)
 				else:
-					start_firing_for_player(1, dir)
-			draw_aim_line_for_player(my_p_id, Vector2.DOWN)
+					start_firing_for_player(my_p_id, dir)
+			my_player.synced_aim_dir = Vector2.DOWN
 			if MultiplayerManager.is_multiplayer:
 				sync_aim.rpc(Vector2.DOWN)
 				
 	if event is InputEventMouseMotion or event is InputEventScreenDrag:
 		if is_aiming:
-			var dir = (event.position - my_lp).normalized()
+			var dir = (event.position - my_player.launch_point).normalized()
 			last_aim_pos = event.position
-			draw_aim_line_for_player(my_p_id, dir)
+			my_player.synced_aim_dir = dir
 			if MultiplayerManager.is_multiplayer:
 				sync_aim.rpc(dir)
 
 @rpc("any_peer", "call_remote", "unreliable")
 func sync_aim(dir: Vector2):
 	var sender = multiplayer.get_remote_sender_id()
-	draw_aim_line_for_player(1 if sender == 1 else 2, dir)
+	var p_id = 1 if sender == 1 else 2
+	if players.has(p_id):
+		players[p_id].synced_aim_dir = dir
 
 @rpc("any_peer", "call_local")
 func request_fire(dir: Vector2):
 	if not multiplayer.is_server(): return
 	var sender = multiplayer.get_remote_sender_id()
-	start_firing_for_player(1 if sender == 1 else 2, dir)
-
-func draw_aim_line_for_player(p_id: int, direction: Vector2):
-	var lp = launch_point_1 if p_id == 1 else launch_point_2
-	var l = launcher if p_id == 1 else launcher_2
-	var al = aim_line if p_id == 1 else aim_line_2
-	var tp = trajectory_preview if p_id == 1 else trajectory_preview_2
-
-	if not l or not al or not tp: return
-	
-	if direction.y >= -0.1:
-		al.clear_points()
-		tp.clear_points()
-		l.clear_aim()
-		return
-		
-	l.set_aim(atan2(direction.y, direction.x))
-	al.clear_points()
-	tp.clear_points()
-
-	var space_state = get_world_2d().direct_space_state
-	var query = PhysicsRayQueryParameters2D.create(lp + direction * 2, lp + direction * 800)
-	query.collision_mask = 1
-	var result = space_state.intersect_ray(query)
-	
-	if result:
-		# Dotted main line to first bounce
-		var total_dist = lp.distance_to(result.position)
-		var dir_norm = (result.position - lp).normalized()
-		var pos = lp
-		var traveled = 0.0
-		while traveled < total_dist:
-			var seg = min(8.0, total_dist - traveled)
-			al.add_point(pos)
-			pos = pos + dir_norm * seg
-			traveled += seg
-			al.add_point(pos)
-			var gap = min(5.0, total_dist - traveled)
-			pos = pos + dir_norm * gap
-			traveled += gap
-
-		# Bounce preview — shorter dots, fading feel
-		if active_powerup != ActivePowerup.RAILGUN:
-			var bounce_dir = direction.bounce(result.normal)
-			var b_pos = result.position
-			for i in range(5):
-				tp.add_point(b_pos)
-				b_pos = b_pos + bounce_dir * 6.0
-				tp.add_point(b_pos)
-				b_pos = b_pos + bounce_dir * 5.0
-		else:
-			var b_pos = result.position
-			for i in range(10):
-				tp.add_point(b_pos)
-				b_pos = b_pos + direction * 6.0
-				tp.add_point(b_pos)
-				b_pos = b_pos + direction * 5.0
-
-		tp.add_point(result.position - Vector2(1, 0))
-		tp.add_point(result.position + Vector2(1, 0))
-	else:
-		var dir_norm = direction
-		var pos = lp
-		for i in range(25):
-			al.add_point(pos)
-			pos = pos + dir_norm * 8.0
-			al.add_point(pos)
-			pos = pos + dir_norm * 5.0
+	var p_id = 1 if sender == 1 else 2
+	start_firing_for_player(p_id, dir)
 
 # ---- FIRING ----
-
-@rpc("authority", "call_local", "reliable")
-func sync_magazine_fire(p_id: int):
-	if p_id == 1:
-		magazine.fire_ball()
-	elif magazine_2:
-		magazine_2.fire_ball()
-
-@rpc("authority", "call_local", "reliable")
-func sync_magazine_return(p_id: int):
-	if p_id == 1:
-		magazine.return_ball()
-	elif magazine_2:
-		magazine_2.return_ball()
 
 func start_firing_for_player(p_id: int, dir: Vector2):
 	var total_ammo = ammo + bonus_ammo
 	if ammo_multiplier > 1.0:
 		total_ammo = int(total_ammo * ammo_multiplier)
 		
-	# Fix: Remove is_first_shooter check. Whichever player starts firing 
-	# while a powerup is active will consume and use that powerup.
 	var p_type = active_powerup
 	
-	if p_id == 1:
-		p1_fired = true
-		p1_fire_dir = dir
-		p1_balls_to_spawn = total_ammo
-		p1_is_spawning = (p1_balls_to_spawn > 0)
-		p1_first_ball_returned = false
-		if preview_ball_1: preview_ball_1.visible = false
-		if ammo_label and (not MultiplayerManager.is_multiplayer or multiplayer.is_server()): ammo_label.visible = false
-		if aim_line: aim_line.clear_points()
-		if trajectory_preview: trajectory_preview.clear_points()
-	else:
-		p2_fired = true
-		p2_fire_dir = dir
-		p2_balls_to_spawn = total_ammo
-		p2_is_spawning = (p2_balls_to_spawn > 0)
-		p2_first_ball_returned = false
-		if preview_ball_2: preview_ball_2.visible = false
-		if ammo_label_2 and (not MultiplayerManager.is_multiplayer or not multiplayer.is_server()): ammo_label_2.visible = false
-		if aim_line_2: aim_line_2.clear_points()
-		if trajectory_preview_2: trajectory_preview_2.clear_points()
-		
-	# Handle Powerup Logic
+	# Handle Powerup Logic globally before forwarding to the player controller
 	if p_type != ActivePowerup.NONE:
 		if p_type == ActivePowerup.BURN:
-			# BURN applies to all balls for both players this round
 			burn_round_active = true
 			set_cooldown(ActivePowerup.BURN)
 			active_powerup = ActivePowerup.NONE
 		else:
-			var special_scene = null
-			match p_type:
-				ActivePowerup.EXPLOSIVE: special_scene = EXPLOSIVE_BALL_SCENE
-				ActivePowerup.RAILGUN: special_scene = RAILGUN_BALL_SCENE
-
-			if special_scene:
-				var ball = special_scene.instantiate()
-				ball.player_id = p_id
-				ball.position = launch_point_1 if p_id == 1 else launch_point_2
-				ball.speed = 800.0 if p_type != ActivePowerup.RAILGUN else 1500.0
-				ball.ball_returned.connect(_on_ball_returned)
-				ball.ball_landed.connect(_on_ball_landed)
-				ball_container.add_child(ball, true)
-				ball.launch(dir)
-				
-				if p_type == ActivePowerup.RAILGUN:
-					sound_manager.play_railgun()
-					railgun_active = true
-					
-				# Consume ammo for the special shot
-				if p_id == 1:
-					if p_type == ActivePowerup.RAILGUN:
-						for i in range(p1_balls_to_spawn): 
-							if MultiplayerManager.is_multiplayer and multiplayer.is_server(): sync_magazine_fire.rpc(1)
-							else: sync_magazine_fire(1)
-						p1_balls_to_spawn = 0
-						p1_is_spawning = false
-					else:
-						if MultiplayerManager.is_multiplayer and multiplayer.is_server(): sync_magazine_fire.rpc(1)
-						else: sync_magazine_fire(1)
-						p1_balls_to_spawn -= 1
-						if p1_balls_to_spawn <= 0: p1_is_spawning = false
-				else:
-					if p_type == ActivePowerup.RAILGUN:
-						for i in range(p2_balls_to_spawn): 
-							if MultiplayerManager.is_multiplayer and multiplayer.is_server(): sync_magazine_fire.rpc(2)
-							else: sync_magazine_fire(2)
-						p2_balls_to_spawn = 0
-						p2_is_spawning = false
-					else:
-						if MultiplayerManager.is_multiplayer and multiplayer.is_server(): sync_magazine_fire.rpc(2)
-						else: sync_magazine_fire(2)
-						p2_balls_to_spawn -= 1
-						if p2_balls_to_spawn <= 0: p2_is_spawning = false
-						
-				set_cooldown(p_type)
-				active_powerup = ActivePowerup.NONE
-				
+			set_cooldown(p_type)
+			active_powerup = ActivePowerup.NONE
+			
 		update_all_powerup_ui()
-		update_launcher_type()
-		if launcher: launcher.clear_aim()
-		if launcher_2: launcher_2.clear_aim()
 
-func do_launch_ball(p_id: int, dir: Vector2):
-	sound_manager.play("launch")
-	var ball = BALL_SCENE.instantiate()
-	ball.player_id = p_id
-	ball.position = launch_point_1 if p_id == 1 else launch_point_2
-	ball.speed = 800.0
-	ball.damage_multiplier = damage_multiplier * Progression.get_damage_multiplier()
-	ball.is_powered = (damage_multiplier > 1.0)
-	ball.applies_burn = burn_round_active
-	ball.ball_returned.connect(_on_ball_returned)
-	ball.ball_landed.connect(_on_ball_landed)
-	ball_container.add_child(ball, true)
-	ball.launch(dir)
+	var is_powered = (damage_multiplier > 1.0)
+	var dmg_mult = damage_multiplier * Progression.get_damage_multiplier()
 	
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		sync_magazine_fire.rpc(p_id)
-	else:
-		sync_magazine_fire(p_id)
+	if players.has(p_id):
+		if MultiplayerManager.is_multiplayer:
+			players[p_id].start_firing_rpc.rpc(dir, total_ammo, p_type, dmg_mult, burn_round_active, is_powered)
+		else:
+			players[p_id].start_firing_rpc(dir, total_ammo, p_type, dmg_mult, burn_round_active, is_powered)
+
 # ---- EXPLOSION ----
 
 @rpc("authority", "call_local", "unreliable")
@@ -1304,21 +976,22 @@ func spawn_purple_spray_vfx(pos: Vector2):
 # ---- HUD & SCORE ----
 
 func spawn_ammo_popup(count: int):
+	var lp = players[1].launch_point if players.has(1) else Vector2(195, arena_bottom)
 	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		play_vfx.rpc("ammo_popup", launch_point_1, {"count": count})
+		play_vfx.rpc("ammo_popup", lp, {"count": count})
 	else:
-		play_vfx("ammo_popup", launch_point_1, {"count": count})
+		play_vfx("ammo_popup", lp, {"count": count})
 
 func spawn_ammo_popup_vfx(count: int):
-	for i in range(count):
-		magazine.add_ball_plop()
-		if magazine_2: magazine_2.add_ball_plop()
+	for p in players.values():
+		p.magazine.add_ball_plop()
 		
+	var lp = players[1].launch_point if players.has(1) else Vector2(195, arena_bottom)
 	var tier = min(count, 5)
 	var label = Label.new()
 	label.text = "+%d" % count
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.position = Vector2(launch_point_1.x - 40, launch_point_1.y - 30)
+	label.position = Vector2(lp.x - 40, lp.y - 30)
 	var sizes = [16, 22, 28, 36, 44]
 	label.add_theme_font_size_override("font_size", sizes[tier - 1])
 	var colors = [Color(0.4, 0.8, 0.5), Color(0.3, 0.9, 0.4), Color(0.95, 0.8, 0.2), Color(1.0, 0.5, 0.15), Color(1.0, 0.2, 0.3)]
@@ -1339,16 +1012,18 @@ func spawn_ammo_popup_vfx(count: int):
 	tween.chain().tween_callback(label.queue_free)
 
 func spawn_modifier_popup(text: String, color: Color):
+	var lp = players[1].launch_point if players.has(1) else Vector2(195, arena_bottom)
 	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		play_vfx.rpc("modifier_popup", launch_point_1, {"text": text, "color": color})
+		play_vfx.rpc("modifier_popup", lp, {"text": text, "color": color})
 	else:
-		play_vfx("modifier_popup", launch_point_1, {"text": text, "color": color})
+		play_vfx("modifier_popup", lp, {"text": text, "color": color})
 
 func spawn_modifier_popup_vfx(text: String, color: Color):
 	var label = Label.new()
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.position = Vector2(155, launch_point_1.y - 50)
+	var lp = players[1].launch_point if players.has(1) else Vector2(195, arena_bottom)
+	label.position = Vector2(155, lp.y - 50)
 	label.add_theme_font_size_override("font_size", 24)
 	label.add_theme_color_override("font_color", color)
 	add_child(label)
@@ -1566,6 +1241,7 @@ func spawn_combo_text_vfx(combo: int):
 			combo_label.queue_free()
 			combo_label = null
 	)
+
 # ---- PICKUPS & RAINBOW ----
 
 func collect_pickup(pickup_type: int):
@@ -1613,38 +1289,10 @@ func on_boss_killed(boss):
 
 # ---- ROUND MANAGEMENT ----
 
-@rpc("authority", "call_local")
-func animate_launcher(p_id: int, new_x: float):
-	if p_id == 1:
-		next_launch_x_1 = new_x
-		launch_point_1.x = new_x # Immediate update for aim line
-		magazine.shift_entrance_to(new_x)
-		create_tween().tween_property(launcher, "position:x", new_x, 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-	else:
-		next_launch_x_2 = new_x
-		launch_point_2.x = new_x
-		if magazine_2: magazine_2.shift_entrance_to(new_x)
-		if launcher_2: create_tween().tween_property(launcher_2, "position:x", new_x, 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-
 func _on_ball_landed(x_pos: float, p_id: int):
-	var nx = clamp(x_pos, arena_left + 15, arena_right - 15)
-	if p_id == 1 and not p1_first_ball_returned:
-		p1_first_ball_returned = true
-		if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-			animate_launcher.rpc(1, nx)
-		elif not MultiplayerManager.is_multiplayer:
-			animate_launcher(1, nx)
-	elif p_id == 2 and not p2_first_ball_returned:
-		p2_first_ball_returned = true
-		if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-			animate_launcher.rpc(2, nx)
+	pass # Physical landing handling migrated into player_controller.gd
+
 func _on_ball_returned(p_id: int = 1):
-	# Update magazine visuals
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
-		sync_magazine_return.rpc(p_id)
-	else:
-		sync_magazine_return(p_id)
-		
 	# Delay the check slightly to let queue_free finish
 	call_deferred("check_round_end")
 
@@ -1662,31 +1310,34 @@ func on_railgun_death_finished():
 		railgun_active = false
 		check_round_end()
 
-
 func check_round_end():
 	# Determine if any ball nodes actually still exist and aren't dying
 	var physical_balls = 0
 	for child in ball_container.get_children():
 		if is_instance_valid(child) and not child.is_queued_for_deletion():
 			physical_balls += 1
+			
+	var any_spawning = false
+	for p in players.values():
+		if p.is_spawning:
+			any_spawning = true
 	
 	# End round if no balls are left to fire AND no balls are flying
-	if not is_spawning and balls_in_play <= 0 and physical_balls == 0:
+	if not any_spawning and physical_balls == 0:
 		if railgun_deaths_pending > 0:
 			# Still waiting for railgun animations
 			return
 		end_round()
+
 func end_round():
-	# Reset firing flags for both players
-	p1_fired = false
-	p2_fired = false
+	for p in players.values():
+		p.has_fired = false
+		p.launch_point.x = p.next_launch_x
+		p.set_preview_visible(true)
+		
 	board_clear_played = false
 	railgun_active = false # Reset railgun state
 	current_round += 1
-	
-	# Update launch origins for the next turn
-	launch_point_1.x = next_launch_x_1
-	launch_point_2.x = next_launch_x_2
 
 	# Apply round modifiers
 	damage_multiplier = next_round_damage_mult
@@ -1698,8 +1349,8 @@ func end_round():
 	var mtint = Color(1, 1, 1, 0)
 	if damage_multiplier > 1.0: mtint = Color(0.9, 0.15, 0.1, 0.3)
 	elif ammo_multiplier > 1.0: mtint = Color(0.9, 0.7, 0.15, 0.3)
-	magazine.modifier_tint = mtint
-	if magazine_2: magazine_2.modifier_tint = mtint
+	for p in players.values():
+		p.magazine.modifier_tint = mtint
 
 	# Progress cooldowns
 	tick_cooldowns()
@@ -1744,11 +1395,6 @@ func end_round():
 		bonus_ammo += pending_ammo
 		spawn_ammo_popup(pending_ammo)
 		pending_ammo = 0
-
-	# Reset previews
-	create_preview_balls()
-	if preview_ball_1: preview_ball_1.visible = false
-	if preview_ball_2: preview_ball_2.visible = false
 	
 	update_launcher_type()
 	spawn_round_content()
@@ -2113,19 +1759,16 @@ func finish_drop():
 
 func after_drop_complete():
 	update_hud()
-	update_ammo_label_position()
+	for p in players.values():
+		p.update_ammo_label_position()
 	
 	if not MultiplayerManager.is_multiplayer or multiplayer.is_server():
-		if ammo_label: ammo_label.visible = true
-		if preview_ball_1:
-			preview_ball_1.position = launch_point_1
-			preview_ball_1.visible = true
+		if players.has(1) and players[1].ammo_label: players[1].ammo_label.visible = true
+		if players.has(1): players[1].set_preview_visible(true)
 			
 	if not MultiplayerManager.is_multiplayer or not multiplayer.is_server():
-		if ammo_label_2: ammo_label_2.visible = true
-		if preview_ball_2:
-			preview_ball_2.position = launch_point_2
-			preview_ball_2.visible = true
+		if players.has(2) and players[2].ammo_label: players[2].ammo_label.visible = true
+		if players.has(2): players[2].set_preview_visible(true)
 		
 	sound_manager.play_reload()
 	update_launcher_type()
@@ -2136,11 +1779,14 @@ func after_drop_complete():
 @rpc("authority", "call_remote")
 func _client_after_drop_rpc():
 	update_hud()
-	update_ammo_label_position()
-	if ammo_label_2: ammo_label_2.visible = true
-	if preview_ball_2:
-		preview_ball_2.position = launch_point_2
-		preview_ball_2.visible = true
+	for p in players.values():
+		p.has_fired = false
+		p.launch_point.x = p.next_launch_x
+		p.update_ammo_label_position()
+
+	if players.has(2) and players[2].ammo_label: players[2].ammo_label.visible = true
+	if players.has(2): players[2].set_preview_visible(true)
+	
 	sound_manager.play_reload()
 	update_launcher_type()
 
@@ -2251,8 +1897,10 @@ func get_occupied_cells() -> Array:
 
 func game_over():
 	game_active = false
-	p1_fired = true
-	p2_fired = true
+	for p in players.values():
+		p.has_fired = true
+		if p.ammo_label: p.ammo_label.visible = false
+		
 	Engine.time_scale = 1.0
 	if score > high_score:
 		high_score = score
@@ -2261,8 +1909,6 @@ func game_over():
 	final_score_label.text = "Score: %d  |  Round %d" % [score, current_round]
 	final_score_label.visible = true
 	restart_button.visible = true
-	ammo_label.visible = false
-	if ammo_label_2: ammo_label_2.visible = false
 
 func add_score(points: int):
 	var multiplied = points * max(1, combo_count)
@@ -2297,7 +1943,12 @@ func update_xp_preview():
 
 func update_hud():
 	ammo_label.text = "× %d" % (ammo + bonus_ammo)
-	if ammo_label_2: ammo_label_2.text = "× %d" % (ammo + bonus_ammo)
+	if players.has(2) and players[2].ammo_label:
+		players[2].ammo_label.text = "× %d" % (ammo + bonus_ammo)
+		
+	for p in players.values():
+		p.set_ammo(ammo + bonus_ammo)
+		
 	round_label.text = "%02d" % current_round
 	high_score_label.text = "SCORE · BEST %d" % high_score
 	update_score_display()
@@ -2369,10 +2020,15 @@ func _is_board_clear() -> bool:
 	return true
 
 func _check_board_clear_visual():
-	if board_clear_played or not (p1_fired or p2_fired):
+	if board_clear_played:
 		return
-	if not _is_board_clear():
+	var any_fired = false
+	for p in players.values():
+		if p.has_fired: any_fired = true
+		
+	if not any_fired or not _is_board_clear():
 		return
+		
 	board_clear_played = true
 	play_board_clear()
 	# Kill all balls so the round ends without waiting for them to drift back
@@ -2383,18 +2039,21 @@ func _check_board_clear_visual():
 	var t = create_tween()
 	t.tween_interval(0.55)
 	t.tween_callback(func():
-		if (p1_fired or p2_fired):
-			p1_balls_in_play = 0
-			p2_balls_in_play = 0
-			p1_is_spawning = false
-			p2_is_spawning = false
+		if any_fired:
+			for p in players.values():
+				p.is_spawning = false
+				p.balls_to_spawn = 0
 			check_round_end()
 	)
 
 func check_early_round_end():
 	# Only consider early end while firing
-	if not p1_fired and not p2_fired:
+	var any_fired = false
+	for p in players.values():
+		if p.has_fired: any_fired = true
+	if not any_fired:
 		return
+		
 	# Only if we have a large amount of ammo
 	if (ammo + bonus_ammo) < 50:
 		return
@@ -2403,12 +2062,9 @@ func check_early_round_end():
 		for ball in ball_container.get_children():
 			if is_instance_valid(ball):
 				ball.queue_free()
-		p1_balls_in_play = 0
-		p2_balls_in_play = 0
-		p1_is_spawning = false
-		p2_is_spawning = false
-		p1_balls_to_spawn = 0
-		p2_balls_to_spawn = 0
+		for p in players.values():
+			p.is_spawning = false
+			p.balls_to_spawn = 0
 		end_round()
 
 func _draw_combo_bar():
@@ -2446,4 +2102,3 @@ func _draw_combo_bar():
 	# Glow behind text
 	combo_bar.draw_string(ThemeDB.fallback_font, Vector2(text_x + 1, text_y + 1), text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, Color(0, 0, 0, 0.4))
 	combo_bar.draw_string(ThemeDB.fallback_font, Vector2(text_x, text_y), text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, bar_color)
-		
