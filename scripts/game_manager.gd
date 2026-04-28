@@ -158,6 +158,8 @@ var combo_slow_timer: float = 0.0
 # Client VFX Monitor
 var last_brick_healths: Dictionary = {}
 
+var invasion_safety_timer: float = 0.0
+
 func broadcast_vfx(effect: String, pos: Vector2, data: Dictionary = {}):
 	if MP.is_server():
 		play_vfx.rpc(effect, pos, data)
@@ -500,6 +502,24 @@ func _process(delta):
 							tween.tween_property(sprite, "modulate", Color(1, 1, 1, 1), 0.1)
 						sound_manager.play_hit()
 				last_brick_healths[brick_id] = current_hp
+
+
+	if GMode.is_invasion() and game_active:
+		var any_firing = false
+		for p in players.values():
+			if p.has_fired: 
+				any_firing = true
+				break
+		
+		if any_firing:
+			invasion_safety_timer += delta
+			# If 5 seconds have passed, force the ability to shoot again
+			if invasion_safety_timer >= 5.0:
+				invasion_safety_timer = 0.0
+				print("Safety Valve: 5 seconds reached, forcing turn reset.")
+				end_round()
+		else:
+			invasion_safety_timer = 0.0
 
 func add_shake(amount: float):
 	shake_amount = max(shake_amount, amount)
@@ -1322,8 +1342,8 @@ func on_railgun_death_finished():
 		railgun_active = false
 		check_round_end()
 
+
 func check_round_end():
-	# Determine if any ball nodes actually still exist and aren't dying
 	var physical_balls = 0
 	for child in ball_container.get_children():
 		if is_instance_valid(child) and not child.is_queued_for_deletion():
@@ -1332,15 +1352,27 @@ func check_round_end():
 	var any_spawning = false
 	for p in players.values():
 		if p.is_spawning:
-			any_spawning = true
+			# Safety check: if balls_to_spawn is 0 but it's still "spawning", force it off
+			if p.balls_to_spawn <= 0:
+				p.is_spawning = false
+			else:
+				any_spawning = true
 	
-	# End round if no balls are left to fire AND no balls are flying
+	# INVASION MODE OVERRIDE
+	if GMode.is_invasion():
+		# If we've finished firing all balls, we don't necessarily need 
+		# to wait for every single ball to die before letting the player aim again.
+		if not any_spawning:
+			# If only 1-2 balls are left drifting, or we've waited a bit, reset.
+			if physical_balls <= 2: 
+				end_round()
+				return
+
+	# Standard Classic Mode check
 	if not any_spawning and physical_balls == 0:
 		if railgun_deaths_pending > 0:
-			# Still waiting for railgun animations
 			return
 		end_round()
-
 func end_round():
 	for p in players.values():
 		p.has_fired = false
@@ -1416,6 +1448,28 @@ func end_round():
 	else:
 		after_drop_complete()
 
+	if GMode.is_invasion():
+		for p in players.values():
+			p.has_fired = false
+			p.is_spawning = false
+			p.balls_to_spawn = 0
+			p.set_preview_visible(true)
+			if p.launcher:
+				p.launcher.clear_aim()
+		
+		# In Invasion, we don't want to run the classic "Spawn & Slide" logic
+		# because the Invasion manager handles the brick movement.
+		current_round += 1
+		tick_cooldowns()
+		update_all_powerup_ui()
+		update_hud()
+		
+		# Reset internal GM flags
+		railgun_active = false 
+		railgun_deaths_pending = 0
+		
+		# We exit early so we don't trigger spawn_round_content()
+		return 
 func spawn_guardians_if_needed():
 	for brick in brick_container.get_children():
 		if not brick is Node2D: continue
