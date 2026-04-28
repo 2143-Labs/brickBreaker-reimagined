@@ -38,7 +38,7 @@ const SAVE_PATH = "user://highscore.save"
 @onready var magazine = $Magazine
 @onready var sound_manager = $SoundManager
 @onready var launcher = $Launcher
-@onready var xp_fill = $HUD/XPBar/XPFill
+#@onready var xp_fill = $HUD/XPBar/XPFill
 @onready var xp_preview_fill = $HUD/XPPreviewFill
 
 var settings_menu: Node = null
@@ -542,13 +542,13 @@ func update_all_powerup_ui():
 func update_launcher_type():
 		match active_powerup:
 			ActivePowerup.NONE:
-				launcher.set_type(0)      # DEFAULT
+				launcher.set_type(0)	  # DEFAULT
 			ActivePowerup.EXPLOSIVE:
 				launcher.set_type(1)  # BOMB
 			ActivePowerup.RAILGUN:
-				launcher.set_type(2)    # RAILGUN
+				launcher.set_type(2)	# RAILGUN
 			ActivePowerup.BURN:
-				launcher.set_type(3)       # BURN
+				launcher.set_type(3)	   # BURN
 func _on_nuke_pressed():
 	if launcher:
 		launcher.set_type(4)  # NUKE visual briefly
@@ -641,7 +641,6 @@ func setup_multiplayer():
 	print("[NET] GlobalSynchronizer added")
 
 func _add_spawner(container: Node, scene_paths: Array, spawner_name: String):
-	# Check if already exists (to avoid duplicates if _ready is called multiple times)
 	if has_node(spawner_name):
 		return
 		
@@ -650,11 +649,12 @@ func _add_spawner(container: Node, scene_paths: Array, spawner_name: String):
 	for path in scene_paths:
 		spawner.add_spawnable_scene(path)
 	
-	# Use absolute path for reliability
-	spawner.spawn_path = container.get_path()
-	add_child(spawner)
+	# Add to the GameManager itself, NOT the container!
+	add_child(spawner, true)
+	
+	# Safely point the spawner to the container
+	spawner.spawn_path = spawner.get_path_to(container)
 	print("[NET] Spawner ", spawner_name, " added for path: ", spawner.spawn_path)
-
 func _input(event):
 	if is_firing or not game_active or is_sliding or is_dropping:
 		return
@@ -821,7 +821,7 @@ func start_firing():
 				ball.speed = 800.0 if active_powerup != ActivePowerup.RAILGUN else 1500.0
 				ball.ball_returned.connect(_on_ball_returned)
 				ball.ball_landed.connect(_on_ball_landed)
-				ball_container.add_child(ball)
+				ball_container.add_child(ball, true)
 				ball.launch(fire_direction)
 				if active_powerup == ActivePowerup.RAILGUN:
 					sound_manager.play_railgun()
@@ -858,7 +858,7 @@ func do_launch_ball():
 	ball.applies_burn = burn_round_active
 	ball.ball_returned.connect(_on_ball_returned)
 	ball.ball_landed.connect(_on_ball_landed)
-	ball_container.add_child(ball)
+	ball_container.add_child(ball, true)
 	ball.launch(fire_direction)
 	balls_in_play += 1
 	magazine.fire_ball()
@@ -1025,7 +1025,7 @@ func on_rainbow_brick_destroyed(pos: Vector2):
 		pickup.pickup_type = 1  # 2x damage
 	else:
 		pickup.pickup_type = 2  # nuke charge
-	orb_container.add_child(pickup)
+	orb_container.add_child(pickup, true)
 
 func on_boss_killed(boss):
 	if boss.is_final_boss:
@@ -1036,7 +1036,7 @@ func on_boss_killed(boss):
 		var pickup = PICKUP_SCENE.instantiate()
 		pickup.position = boss.global_position
 		pickup.pickup_type = randi_range(0, 1)
-		orb_container.add_child(pickup)
+		orb_container.add_child(pickup, true)
 		spawn_modifier_popup("ELITE DEFEATED!", Color(0.6, 0.3, 0.9))
 	# Track killed boss rounds for elite system
 	for round_num in boss_schedule.keys():
@@ -1195,7 +1195,7 @@ func spawn_guardians_if_needed():
 				for i in range(min(2, available.size())):
 					var g = GUARDIAN_BRICK_SCENE.instantiate()
 					g.position = Vector2(grid_start_x + available[i] * cell_width, grid_start_y + target_row * cell_height)
-					brick_container.add_child(g)
+					brick_container.add_child(g, true)
 
 func spawn_round_content():
 	if MultiplayerManager.is_multiplayer and not multiplayer.is_server():
@@ -1224,7 +1224,7 @@ func try_spawn_special_bricks():
 			brick.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
 			brick.health = current_round
 			brick.max_health = current_round
-			brick_container.add_child(brick)
+			brick_container.add_child(brick, true)
 			occupied.append(Vector2(col, 0))
 
 	# Rotating triangle brick — chaotic spinning hazard, max one on board
@@ -1235,6 +1235,7 @@ func try_spawn_special_bricks():
 			has_triangle = true
 		if b.is_in_group("diagonal_bricks"):
 			has_diagonal = true
+			
 	if not has_triangle and randf() < 0.5:
 		var available = []
 		for c in range(grid_cols):
@@ -1248,7 +1249,7 @@ func try_spawn_special_bricks():
 			tri.max_health = current_round
 			tri.rotation = randf() * TAU
 			tri.spin_speed = randf_range(1.0, 2.0) * (1.0 if randf() > 0.5 else -1.0)
-			brick_container.add_child(tri)
+			brick_container.add_child(tri, true)
 			occupied.append(Vector2(col, 0))
 
 	# Diagonal-cut brick — grid-aligned right triangle, slightly more common
@@ -1264,7 +1265,7 @@ func try_spawn_special_bricks():
 			d.health = current_round
 			d.max_health = current_round
 			d.orientation = randi() % 4
-			brick_container.add_child(d)
+			brick_container.add_child(d, true)
 			occupied.append(Vector2(col, 0))
 
 	# Oil barrel: 8% chance after round 10
@@ -1277,8 +1278,7 @@ func try_spawn_special_bricks():
 			var col = available[randi() % available.size()]
 			var barrel = OIL_BARREL_SCENE.instantiate()
 			barrel.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
-			brick_container.add_child(barrel)
-
+			brick_container.add_child(barrel, true)
 func try_spawn_boss():
 	var boss_info = get_boss_info(current_round)
 	if boss_info:
@@ -1404,9 +1404,9 @@ func try_spawn_rainbow():
 			var col = available[randi() % available.size()]
 			var rb = RAINBOW_BRICK_SCENE.instantiate()
 			rb.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
-			brick_container.add_child(rb)
+			brick_container.add_child(rb, true)
 			rainbow_on_board = true
-
+	
 func spawn_boss(info: Dictionary):
 	var max_col = grid_cols - info["w"]
 	spawn_boss_at(info, randi_range(0, max(0, max_col)))
@@ -1439,7 +1439,7 @@ func spawn_boss_at(info: Dictionary, col: int):
 	var x = grid_start_x + col * cell_width + (info["w"] - 1) * cell_width / 2.0
 	var y = grid_start_y + (info["h"] - 1) * cell_height / 2.0
 	boss.position = Vector2(x, y)
-	brick_container.add_child(boss)
+	brick_container.add_child(boss, true)
 
 # ---- SLIDE & DROP ----
 
@@ -1447,17 +1447,23 @@ func start_slide_existing():
 	is_sliding = true
 	slide_progress = 0.0
 	for brick in brick_container.get_children():
+		if not brick is Node2D:
+			continue
 		if brick.has_method("should_move_this_turn"):
 			if not brick.should_move_this_turn():
 				continue
 		brick.set_meta("slide_from", brick.position.y)
 		brick.set_meta("slide_to", brick.position.y + cell_height)
 	for orb in orb_container.get_children():
+		if not orb is Node2D:
+			continue
 		orb.set_meta("slide_from", orb.position.y)
 		orb.set_meta("slide_to", orb.position.y + cell_height)
 
 func finish_slide():
 	for brick in brick_container.get_children():
+		if not brick is Node2D:
+			continue
 		if brick.has_meta("slide_from"):
 			brick.remove_meta("slide_from")
 		if brick.has_meta("slide_to"):
@@ -1467,6 +1473,8 @@ func finish_slide():
 			game_over()
 			return
 	for orb in orb_container.get_children():
+		if not orb is Node2D:
+			continue
 		if orb.has_meta("slide_from"):
 			orb.remove_meta("slide_from")
 		if orb.has_meta("slide_to"):
@@ -1582,7 +1590,7 @@ func spawn_round_bricks_at_row0() -> Array:
 		brick.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
 		brick.health = current_round
 		brick.max_health = current_round
-		brick_container.add_child(brick)
+		brick_container.add_child(brick, true)
 		spawned.append(brick)
 	return spawned
 
@@ -1599,7 +1607,7 @@ func spawn_ammo_orbs_at_row0() -> Array:
 		var col = available[randi() % available.size()]
 		var orb = AMMO_ORB_SCENE.instantiate()
 		orb.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
-		orb_container.add_child(orb)
+		orb_container.add_child(orb, true)
 		spawned.append(orb)
 		# Ammo magnet: chance for bonus orb
 		var magnet_chance = Progression.get_extra_orb_chance()
@@ -1609,13 +1617,15 @@ func spawn_ammo_orbs_at_row0() -> Array:
 				var col2 = available[randi() % available.size()]
 				var orb2 = AMMO_ORB_SCENE.instantiate()
 				orb2.position = Vector2(grid_start_x + col2 * cell_width, grid_start_y)
-				orb_container.add_child(orb2)
+				orb_container.add_child(orb2, true)
 				spawned.append(orb2)
 	return spawned
 
 func get_occupied_cells() -> Array:
 	var occupied = []
 	for brick in brick_container.get_children():
+		if not brick is Node2D:
+			continue
 		if brick.has_method("update_size"):
 			var center_col = round((brick.position.x - grid_start_x) / cell_width)
 			var center_row = round((brick.position.y - grid_start_y) / cell_height)
@@ -1631,11 +1641,12 @@ func get_occupied_cells() -> Array:
 			var row = round((brick.position.y - grid_start_y) / cell_height)
 			occupied.append(Vector2(col, row))
 	for orb in orb_container.get_children():
+		if not orb is Node2D:
+			continue
 		var col = round((orb.position.x - grid_start_x) / cell_width)
 		var row = round((orb.position.y - grid_start_y) / cell_height)
 		occupied.append(Vector2(col, row))
 	return occupied
-
 # ---- HUD & SCORE ----
 
 func spawn_ammo_popup(count: int):

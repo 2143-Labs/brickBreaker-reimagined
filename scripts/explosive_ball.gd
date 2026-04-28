@@ -17,6 +17,18 @@ var pulse_time: float = 0.0
 func _ready():
 	add_to_group("balls")
 	explosion_radius = 110.0 * Progression.get_explosion_radius_mult()
+	
+	if MultiplayerManager.is_multiplayer:
+		var sync = MultiplayerSynchronizer.new()
+		sync.name = "BallSync"
+		var config = SceneReplicationConfig.new()
+		config.add_property(".:position")
+		config.property_set_replication_mode(".:position", SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+		sync.replication_config = config
+		add_child(sync)
+		if not is_multiplayer_authority():
+			set_physics_process(false)
+			
 	queue_redraw()
 
 func _draw():
@@ -26,6 +38,11 @@ func _draw():
 	draw_circle(Vector2.ZERO, 10, Color(1.0, 0.5, 0.15))
 	draw_circle(Vector2.ZERO, 6, Color(1.0, 0.8, 0.3))
 	draw_circle(Vector2.ZERO, 3, Color(1, 1, 1, 0.8))
+
+func _process(delta):
+	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+		pulse_time += delta
+		queue_redraw()
 
 func _physics_process(delta):
 	if not launched or not is_active:
@@ -53,6 +70,7 @@ func _physics_process(delta):
 func launch(dir: Vector2):
 	direction = dir
 	launched = true
+
 func explode():
 	is_active = false
 	var manager = get_tree().get_first_node_in_group("game_manager")

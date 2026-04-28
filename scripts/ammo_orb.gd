@@ -5,6 +5,19 @@ var collected: bool = false
 func _ready():
     queue_redraw()
     body_entered.connect(_on_body_entered)
+    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+        request_initial_state.rpc_id(1)
+
+@rpc("any_peer", "call_remote")
+func request_initial_state():
+    if is_multiplayer_authority():
+        var sender = multiplayer.get_remote_sender_id()
+        sync_state.rpc_id(sender, position)
+
+@rpc("authority", "call_remote")
+func sync_state(p_pos):
+    position = p_pos
+    queue_redraw()
 
 func _draw():
     draw_circle(Vector2.ZERO, 11, Color(0.3, 0.8, 0.4, 0.3))

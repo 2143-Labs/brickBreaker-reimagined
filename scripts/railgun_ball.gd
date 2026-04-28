@@ -1,4 +1,5 @@
 extends CharacterBody2D
+
 signal ball_returned
 signal ball_landed(x_pos: float)
 
@@ -14,16 +15,34 @@ var bounces_remaining: int = 0
 var wall_left: float = 13.0
 var wall_right: float = 377.0
 var wall_top: float = 80.0
+
 func _ready():
 	add_to_group("balls")
 	$CollisionShape2D.disabled = true
 	bounces_remaining = Progression.get_railgun_bounces()
+	
+	if MultiplayerManager.is_multiplayer:
+		var sync = MultiplayerSynchronizer.new()
+		sync.name = "BallSync"
+		var config = SceneReplicationConfig.new()
+		config.add_property(".:position")
+		config.property_set_replication_mode(".:position", SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+		sync.replication_config = config
+		add_child(sync)
+		if not is_multiplayer_authority():
+			set_physics_process(false)
+			
 	queue_redraw()
 
 func _draw():
 	draw_circle(Vector2.ZERO, 4, Color(1, 1, 1, 0.9))
 	draw_circle(Vector2.ZERO, 7, Color(0.3, 0.9, 1.0, 0.5))
 	draw_circle(Vector2.ZERO, 11, Color(0.2, 0.7, 1.0, 0.15))
+
+func _process(delta):
+	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+		beam_points.append(position)
+		queue_redraw()
 
 func _physics_process(delta):
 	if not launched or not is_active:
@@ -101,6 +120,7 @@ func _physics_process(delta):
 				spawn_purple_spray(manager, hit_point)
 
 			spawn_tunnel_hole(manager, hit_point)
+
 	# Despawn off screen (only if no bounces left or past bounds)
 	if position.y > 600 or position.y < 40 or position.x < -20 or position.x > 410:
 		is_active = false

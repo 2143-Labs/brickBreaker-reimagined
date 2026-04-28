@@ -2,6 +2,11 @@
 
 [ext_resource type="Script" path="res://scripts/ammo_orb.gd" id="1"]
 
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_1"]
+properties/0/path = NodePath(".:position")
+properties/0/spawn = true
+properties/0/replication_mode = 1
+
 [sub_resource type="CircleShape2D" id="CircleShape2D_1"]
 radius = 12.0
 [node name="AmmoOrb" type="Area2D"]
@@ -11,3 +16,6 @@ collision_mask = 2
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 shape = SubResource("CircleShape2D_1")
+
+[node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
+replication_config = SubResource("SceneReplicationConfig_1")

@@ -27,10 +27,24 @@ var trail_interval: float = 0.015  # spawn trail dot every 15ms
 
 func _ready():
 	add_to_group("balls")
-	queue_redraw()
 	
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
-		set_physics_process(false)
+	if MultiplayerManager.is_multiplayer:
+		var sync = MultiplayerSynchronizer.new()
+		sync.name = "BallSync"
+		var config = SceneReplicationConfig.new()
+		config.add_property(".:position")
+		config.property_set_replication_mode(".:position", SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+		config.add_property(".:is_powered")
+		config.property_set_replication_mode(".:is_powered", SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+		config.add_property(".:applies_burn")
+		config.property_set_replication_mode(".:applies_burn", SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+		sync.replication_config = config
+		add_child(sync)
+		
+		if not is_multiplayer_authority():
+			set_physics_process(false)
+			
+	queue_redraw()
 
 func get_ball_color() -> Color:
 	if applies_burn:
@@ -59,6 +73,17 @@ func _draw():
 		draw_circle(Vector2.ZERO, 8, Color(0.85, 0.3, 0.25))
 	else:
 		draw_circle(Vector2.ZERO, 8, Color(0.3, 0.55, 0.95))
+
+func _process(delta):
+	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+		queue_redraw()
+		if is_active:
+			trail_timer += delta
+			if trail_timer >= trail_interval:
+				trail_timer = 0.0
+				trail_points.append(position)
+				if trail_points.size() > max_trail_points:
+					trail_points.pop_front()
 
 func _physics_process(delta):
 	if not launched or not is_active:
@@ -100,7 +125,7 @@ func _physics_process(delta):
 	if time_alive - last_brick_hit_time > stuck_threshold and wall_bounce_count > 4:
 		unstick()
 
-	# Hard timeout 	6 force return if ball has been alive too long
+	# Hard timeout force return if ball has been alive too long
 	if time_alive > max_alive_time:
 		is_active = false
 		ball_landed.emit(position.x)

@@ -2,6 +2,7 @@ extends StaticBody2D
 
 var health: int = 1
 var max_health: int = 1
+var burn_stacks: int = 0
 var grid_width: int = 2
 var grid_height: int = 2
 var has_shield: bool = false
@@ -33,6 +34,32 @@ func _ready():
     crack_overlay.z_index = 1
     add_child(crack_overlay)
     crack_overlay.draw.connect(_draw_cracks)
+    
+    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+        request_initial_state.rpc_id(1)
+
+@rpc("any_peer", "call_remote")
+func request_initial_state():
+    if is_multiplayer_authority():
+        var sender = multiplayer.get_remote_sender_id()
+        sync_state.rpc_id(sender, position, health, max_health, burn_stacks, grid_width, grid_height, has_shield, shield_hp, shield_max, is_elite, is_final_boss)
+
+@rpc("authority", "call_remote")
+func sync_state(p_pos, p_health, p_max_health, p_burn_stacks, p_grid_w, p_grid_h, p_has_shield, p_shield_hp, p_shield_max, p_is_elite, p_is_final):
+    position = p_pos
+    health = p_health
+    max_health = p_max_health
+    burn_stacks = p_burn_stacks
+    grid_width = p_grid_w
+    grid_height = p_grid_h
+    has_shield = p_has_shield
+    shield_hp = p_shield_hp
+    shield_max = p_shield_max
+    is_elite = p_is_elite
+    is_final_boss = p_is_final
+    update_size()
+    update_display()
+    update_shield_display()
 
 func update_size():
     var w = grid_width * 52.0 - 2.0
@@ -192,23 +219,9 @@ func destroy():
     queue_free()
 
 func get_brick_value() -> int:
-    if is_final_boss:
-        return 50
-    elif is_elite:
-        return 8
-    elif max_health < 100:
-        return 5
-    elif max_health < 300:
-        return 10
-    elif max_health < 500:
-        return 20
-    else:
-        return 30    return 8
-    elif max_health < 100:
-        return 5
-    elif max_health < 300:
-        return 10
-    elif max_health < 500:
-        return 20
-    else:
-        return 30
+    if is_final_boss: return 50
+    elif is_elite: return 8
+    elif max_health < 100: return 5
+    elif max_health < 300: return 10
+    elif max_health < 500: return 20
+    else: return 30

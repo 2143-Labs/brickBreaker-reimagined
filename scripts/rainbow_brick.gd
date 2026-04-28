@@ -9,6 +9,21 @@ var rainbow_time: float = 0.0
 
 func _ready():
     update_display()
+    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+        request_initial_state.rpc_id(1)
+
+@rpc("any_peer", "call_remote")
+func request_initial_state():
+    if is_multiplayer_authority():
+        var sender = multiplayer.get_remote_sender_id()
+        sync_state.rpc_id(sender, position, health, max_health)
+
+@rpc("authority", "call_remote")
+func sync_state(p_pos, p_health, p_max_health):
+    position = p_pos
+    health = p_health
+    max_health = p_max_health
+    update_display()
 
 func _process(delta):
     rainbow_time += delta * 2.0
@@ -42,11 +57,6 @@ func destroy():
     if manager:
         manager.add_score(5)
         if sprite:
-            for i in range(6):
-                var hue = float(i) / 6.0
-                manager.spawn_brick_particles(global_position, Color.from_hsv(hue, 0.7, 0.95))
-        manager.on_rainbow_brick_destroyed(global_position)
-    queue_free():
             for i in range(6):
                 var hue = float(i) / 6.0
                 manager.spawn_brick_particles(global_position, Color.from_hsv(hue, 0.7, 0.95))

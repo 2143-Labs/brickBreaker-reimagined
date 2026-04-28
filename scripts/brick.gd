@@ -44,7 +44,6 @@ func get_brick_color(ratio: float) -> Color:
     return base.lightened((1.0 - ratio) * 0.25)
 func _ready():
     update_display()
-
     crack_overlay = Node2D.new()
     crack_overlay.z_index = 1
     add_child(crack_overlay)
@@ -55,7 +54,6 @@ func _ready():
     fire_overlay.visible = false
     fire_overlay.color = Color(1, 1, 1, 1)
     fire_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    # Sit on top of and slightly above the brick — flame rises off the top edge.
     fire_overlay.offset_left = -30.0
     fire_overlay.offset_right = 30.0
     fire_overlay.offset_top = -50.0
@@ -67,6 +65,23 @@ func _ready():
     fire_material.set_shader_parameter("source_y", 0.47)
     fire_overlay.material = fire_material
     add_child(fire_overlay)
+    
+    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+        request_initial_state.rpc_id(1)
+
+@rpc("any_peer", "call_remote")
+func request_initial_state():
+    if is_multiplayer_authority():
+        var sender = multiplayer.get_remote_sender_id()
+        sync_state.rpc_id(sender, position, health, max_health, burn_stacks)
+
+@rpc("authority", "call_remote")
+func sync_state(p_pos, p_health, p_max_health, p_burn_stacks):
+    position = p_pos
+    health = p_health
+    max_health = p_max_health
+    burn_stacks = p_burn_stacks
+    update_display()
 
 func _process(_delta):
     if burn_stacks > 0:

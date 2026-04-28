@@ -2,3 +2,7 @@
 .godot/
 /android/
 .claude/
+*.x86_64
+
+
+all.txt

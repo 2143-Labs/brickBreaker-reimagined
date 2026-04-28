@@ -47,20 +47,38 @@ func _get_label_offset() -> Vector2:
         2: return Vector2(-6, -4)  # mass toward top-left
         3: return Vector2(6, -4)   # mass toward top-right
     return Vector2.ZERO
-
 func _ready():
     add_to_group("diagonal_bricks")
+    _init_shape()
+    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+        request_initial_state.rpc_id(1)
+
+func _init_shape():
     if collision_polygon:
         collision_polygon.polygon = _get_polygon()
     if health_label:
         var off = _get_label_offset()
-        # Center the label rect on the offset point
         health_label.offset_left = off.x - 14
         health_label.offset_top = off.y - 10
         health_label.offset_right = off.x + 14
         health_label.offset_bottom = off.y + 10
     update_display()
     queue_redraw()
+
+@rpc("any_peer", "call_remote")
+func request_initial_state():
+    if is_multiplayer_authority():
+        var sender = multiplayer.get_remote_sender_id()
+        sync_state.rpc_id(sender, position, health, max_health, burn_stacks, orientation)
+
+@rpc("authority", "call_remote")
+func sync_state(p_pos, p_health, p_max_health, p_burn_stacks, p_orientation):
+    position = p_pos
+    health = p_health
+    max_health = p_max_health
+    burn_stacks = p_burn_stacks
+    orientation = p_orientation
+    _init_shape()
 
 func _process(delta):
     if hit_flash > 0.0:

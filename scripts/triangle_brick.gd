@@ -33,6 +33,27 @@ func _ready():
         pts.append(Vector2(cos(a), sin(a)) * RADIUS)
     if collision_polygon:
         collision_polygon.polygon = pts
+        
+    update_display()
+    queue_redraw()
+    
+    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+        request_initial_state.rpc_id(1)
+
+@rpc("any_peer", "call_remote")
+func request_initial_state():
+    if is_multiplayer_authority():
+        var sender = multiplayer.get_remote_sender_id()
+        sync_state.rpc_id(sender, position, health, max_health, burn_stacks, rotation, spin_speed)
+
+@rpc("authority", "call_remote")
+func sync_state(p_pos, p_health, p_max_health, p_burn_stacks, p_rotation, p_spin_speed):
+    position = p_pos
+    health = p_health
+    max_health = p_max_health
+    burn_stacks = p_burn_stacks
+    rotation = p_rotation
+    spin_speed = p_spin_speed
     update_display()
     queue_redraw()
 

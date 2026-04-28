@@ -19,14 +19,23 @@ func _ready():
     warning_overlay.z_index = 2
     add_child(warning_overlay)
     warning_overlay.draw.connect(_draw_warning)
-func _process(delta):
-    barrel_time += delta
-    # Subtle pulsing when low HP
-    if health <= 1 and sprite:
-        var pulse = 0.5 + 0.5 * sin(barrel_time * 6)
-        sprite.modulate = Color(1.0 + pulse * 0.3, 1.0 - pulse * 0.2, 1.0 - pulse * 0.3, 1)
-    if warning_overlay:
-        warning_overlay.queue_redraw()
+    
+    if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+        request_initial_state.rpc_id(1)
+
+@rpc("any_peer", "call_remote")
+func request_initial_state():
+    if is_multiplayer_authority():
+        var sender = multiplayer.get_remote_sender_id()
+        sync_state.rpc_id(sender, position, health, max_health, burn_stacks)
+
+@rpc("authority", "call_remote")
+func sync_state(p_pos, p_health, p_max_health, p_burn_stacks):
+    position = p_pos
+    health = p_health
+    max_health = p_max_health
+    burn_stacks = p_burn_stacks
+    update_display()
 
 func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
     if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
@@ -78,14 +87,6 @@ func destroy():
     is_dying = true
 
     var manager = get_tree().get_first_node_in_group("game_manager")
-    if manager:
-        manager.add_score(5)
-        # BIG explosion
-        manager.do_oil_barrel_explosion(global_position, explosion_radius, explosion_damage)
-    queue_free()
-
-func get_brick_value() -> int:
-    return 5group("game_manager")
     if manager:
         manager.add_score(5)
         # BIG explosion
