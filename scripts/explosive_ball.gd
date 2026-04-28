@@ -1,7 +1,7 @@
 extends CharacterBody2D
 
-signal ball_returned
-signal ball_landed(x_pos: float)
+signal ball_returned(p_id: int)
+signal ball_landed(x_pos: float, p_id: int)
 
 var direction: Vector2 = Vector2.ZERO
 var speed: float = 800.0
@@ -9,9 +9,9 @@ var damage: int = 1
 var damage_multiplier: float = 1.0
 var is_active: bool = true
 var launched: bool = false
+var player_id: int = 1
 
 var explosion_radius: float = 110.0
-
 var pulse_time: float = 0.0
 
 func _ready():
@@ -24,6 +24,8 @@ func _ready():
 		var config = SceneReplicationConfig.new()
 		config.add_property(".:position")
 		config.property_set_replication_mode(".:position", SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+		config.add_property(".:player_id")
+		config.property_set_replication_mode(".:player_id", SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
 		sync.replication_config = config
 		add_child(sync)
 		if not is_multiplayer_authority():
@@ -35,7 +37,8 @@ func _draw():
 	var pulse = 0.5 + 0.5 * sin(pulse_time * 8.0)
 	var glow_size = 12 + pulse * 4
 	draw_circle(Vector2.ZERO, glow_size, Color(1.0, 0.4, 0.1, 0.15 + pulse * 0.1))
-	draw_circle(Vector2.ZERO, 10, Color(1.0, 0.5, 0.15))
+	var inner = Color(1.0, 0.5, 0.15) if player_id == 1 else Color(1.0, 0.2, 0.4)
+	draw_circle(Vector2.ZERO, 10, inner)
 	draw_circle(Vector2.ZERO, 6, Color(1.0, 0.8, 0.3))
 	draw_circle(Vector2.ZERO, 3, Color(1, 1, 1, 0.8))
 
@@ -63,8 +66,8 @@ func _physics_process(delta):
 
 	if position.y > 540:
 		is_active = false
-		ball_landed.emit(position.x)
-		ball_returned.emit()
+		ball_landed.emit(position.x, player_id)
+		ball_returned.emit(player_id)
 		queue_free()
 
 func launch(dir: Vector2):
@@ -76,6 +79,6 @@ func explode():
 	var manager = get_tree().get_first_node_in_group("game_manager")
 	if manager:
 		manager.do_explosion(global_position, explosion_radius)
-	ball_landed.emit(position.x)
-	ball_returned.emit()
+	ball_landed.emit(position.x, player_id)
+	ball_returned.emit(player_id)
 	queue_free()

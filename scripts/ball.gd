@@ -1,7 +1,8 @@
 extends CharacterBody2D
 
-signal ball_returned
-signal ball_landed(x_pos: float)
+signal ball_returned(p_id: int)
+signal ball_landed(x_pos: float, p_id: int)
+
 var direction: Vector2 = Vector2.ZERO
 var speed: float = 800.0
 var damage: int = 1
@@ -10,6 +11,7 @@ var is_active: bool = true
 var launched: bool = false
 var is_powered: bool = false
 var applies_burn: bool = false
+var player_id: int = 1
 
 # Stuck detection
 var wall_bounce_count: int = 0
@@ -25,6 +27,7 @@ var max_trail_points: int = 8
 var trail_timer: float = 0.0
 var trail_interval: float = 0.015  # spawn trail dot every 15ms
 
+
 func _ready():
 	add_to_group("balls")
 	
@@ -38,6 +41,8 @@ func _ready():
 		config.property_set_replication_mode(".:is_powered", SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
 		config.add_property(".:applies_burn")
 		config.property_set_replication_mode(".:applies_burn", SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+		config.add_property(".:player_id")
+		config.property_set_replication_mode(".:player_id", SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
 		sync.replication_config = config
 		add_child(sync)
 		
@@ -51,6 +56,8 @@ func get_ball_color() -> Color:
 		return Color(0.95, 0.55, 0.15)
 	elif is_powered:
 		return Color(0.85, 0.3, 0.25)
+	elif player_id == 2:
+		return Color(0.95, 0.35, 0.4)
 	else:
 		return Color(0.3, 0.55, 0.95)
 
@@ -71,6 +78,8 @@ func _draw():
 	elif is_powered:
 		draw_circle(Vector2.ZERO, 10, Color(0.9, 0.2, 0.15, 0.25))
 		draw_circle(Vector2.ZERO, 8, Color(0.85, 0.3, 0.25))
+	elif player_id == 2:
+		draw_circle(Vector2.ZERO, 8, Color(0.95, 0.35, 0.4))
 	else:
 		draw_circle(Vector2.ZERO, 8, Color(0.3, 0.55, 0.95))
 
@@ -128,8 +137,8 @@ func _physics_process(delta):
 	# Hard timeout force return if ball has been alive too long
 	if time_alive > max_alive_time:
 		is_active = false
-		ball_landed.emit(position.x)
-		ball_returned.emit()
+		ball_landed.emit(position.x, player_id)
+		ball_returned.emit(player_id)
 		queue_free()
 		return
 
@@ -137,8 +146,8 @@ func _physics_process(delta):
 
 	if position.y > 540:
 		is_active = false
-		ball_landed.emit(position.x)
-		ball_returned.emit()
+		ball_landed.emit(position.x, player_id)
+		ball_returned.emit(player_id)
 		queue_free()
 
 func unstick():
