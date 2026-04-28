@@ -30,6 +30,7 @@ var volumes: Dictionary = {
 	"orb_collect": 0.35,
 	"reload": 0.5,
 	"bounce": 1.0,
+	"combo": 0.8,
 	"music": 0.6,
 }
 
@@ -65,6 +66,7 @@ func build_sliders():
 		"orb_collect": "Orb Collect",
 		"reload": "Reload",
 		"bounce": "Wall Bounce",
+		"combo": "Combo",
 		"music": "Music",
 	}
 

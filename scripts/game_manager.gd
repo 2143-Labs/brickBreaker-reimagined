@@ -53,7 +53,7 @@ var settings_menu: Node = null
 @onready var nuke_button = $HUD/PowerupBar/NukeButton
 @onready var nuke_label = $HUD/PowerupBar/NukeLabel
 
-var current_round: int = 1
+var current_round: int = 100
 var score: int = 0
 var pending_xp: int = 0
 var high_score: int = 0
@@ -1686,8 +1686,8 @@ func on_brick_destroyed():
 		spawn_screen_flash()
 		# Combo text
 		spawn_combo_text(combo_count)
-		# Play escalating combo audio for larger combos
-	if combo_count >= 5 and sound_manager:
+	# Combo sound — pitches up a half-step per combo level
+	if sound_manager:
 		sound_manager.play_combo(combo_count)
 
 	# Check if board is clear
@@ -1759,20 +1759,28 @@ func play_board_clear():
 	# Big celebratory text
 	var label = Label.new()
 	label.text = "BOARD CLEAR!"
-	label.add_theme_font_size_override("font_size", 48)
+	label.add_theme_font_size_override("font_size", 32)
 	label.add_theme_color_override("font_color", Color(1, 1, 1))
 	label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	label.add_theme_constant_override("outline_size", 6)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	label.clip_text = false
+	label.anchor_left = 0.0
 	label.anchor_right = 1.0
 	label.anchor_top = 0.4
 	label.anchor_bottom = 0.4
+	label.offset_left = 0
+	label.offset_right = 0
 	label.offset_top = -30
 	label.offset_bottom = 30
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.z_index = 101
 	label.modulate.a = 0.0
 	$HUD.add_child(label)
+	# Pivot at center so the scale tween doesn't push it off-screen
+	label.pivot_offset = label.size * 0.5
 	var ltween = create_tween()
 	ltween.set_parallel(true)
 	ltween.tween_property(label, "modulate:a", 1.0, 0.15)

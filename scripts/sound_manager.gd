@@ -19,13 +19,7 @@ var sound_map: Dictionary = {
 	"reload": "reload.wav",
 	"menu_select": "menuselect.wav",
 	"toggle": "toggle.wav",
-	# combo escalation sounds (5..10)
-	"combo5": "combo5.wav",
-	"combo6": "combo6.wav",
-	"combo7": "combo7.wav",
-	"combo8": "combo8.wav",
-	"combo9": "combo9.wav",
-	"combo10": "combo10.wav",
+	"combo": "combo.wav",
 }
 
 var destroy_count: int = 0
@@ -126,24 +120,26 @@ func play_toggle():
 
 
 func play_combo(combo_count: int) -> void:
-	# Only play escalating combo sounds for 5 or more
-	if combo_count < 5:
+	# Combo starts at x2 (second consecutive break inside the window)
+	if combo_count < 2:
 		return
-	var key: String
-	if combo_count >= 10:
-		# For 10+, play combo10 on even counts to avoid spamming on every destroy
-		if combo_count % 2 == 0:
-			key = "combo10"
-		else:
-			return
+	if not players.has("combo") or players["combo"].stream == null:
+		return
+	var mgr = get_tree().get_first_node_in_group("game_manager")
+	if mgr and mgr.settings_menu and not mgr.settings_menu.sfx_enabled:
+		return
+	var temp = AudioStreamPlayer.new()
+	temp.stream = players["combo"].stream
+	# Half-step (semitone) per combo level. x2 = base pitch.
+	var steps = clamp(combo_count - 2, 0, 24)
+	temp.pitch_scale = pow(2.0, steps / 12.0)
+	if mgr and mgr.settings_menu:
+		temp.volume_db = mgr.settings_menu.get_volume_db("combo")
 	else:
-		# 5..9 map directly to combo5..combo9
-		key = "combo%d" % combo_count
-	# Fallback safety: only play if mapping exists
-	if sound_map.has(key):
-		play(key)
-	else:
-		print("SoundManager: missing combo sound mapping for", key)
+		temp.volume_db = 0
+	add_child(temp)
+	temp.play()
+	temp.finished.connect(temp.queue_free)
 
 
 # stop_launch removed: we no longer use a looping launch sound
