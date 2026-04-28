@@ -153,6 +153,12 @@ var combo_slow_timer: float = 0.0
 # Client VFX Monitor
 var last_brick_healths: Dictionary = {}
 
+func broadcast_vfx(effect: String, pos: Vector2, data: Dictionary = {}):
+	if MP.is_server():
+		play_vfx.rpc(effect, pos, data)
+	else:
+		play_vfx(effect, pos, data)
+
 func _ready():
 	grid_start_x = arena_left + cell_width / 2.0
 	grid_start_y = arena_top + cell_height / 2.0
@@ -646,20 +652,14 @@ func request_nuke():
 
 func do_nuke():
 	# Server broadcasts nuke effects to all
-	if MP.is_server():
-		play_vfx.rpc("nuke", Vector2(195, arena_top + (arena_bottom - arena_top) / 2))
-	else:
-		play_vfx("nuke", Vector2(195, arena_top + (arena_bottom - arena_top) / 2))
+	broadcast_vfx("nuke", Vector2(195, arena_top + (arena_bottom - arena_top) / 2))
 
 	# Destroy all bricks with big VFX
 	var bricks = brick_container.get_children().duplicate()
 	for brick in bricks:
 		if is_instance_valid(brick) and brick is Node2D:
 			if brick.has_node("Sprite"):
-				if MP.is_server():
-					play_vfx.rpc("brick_particles", brick.global_position, {"color": brick.get_node("Sprite").color, "hit_dir": Vector2.DOWN})
-				else:
-					play_vfx("brick_particles", brick.global_position, {"color": brick.get_node("Sprite").color, "hit_dir": Vector2.DOWN})
+				broadcast_vfx("brick_particles", brick.global_position, {"color": brick.get_node("Sprite").color, "hit_dir": Vector2.DOWN})
 			
 			# Only the server manages score and physical removal
 			if not MP.is_client():
@@ -788,10 +788,7 @@ func play_vfx(vfx_type: String, pos: Vector2, data: Dictionary = {}):
 			spawn_explosion_vfx(pos, 200.0)
 
 func do_explosion(center: Vector2, radius: float):
-	if MP.is_server():
-		play_vfx.rpc("explosion", center, {"radius": radius})
-	else:
-		play_vfx("explosion", center, {"radius": radius})
+	broadcast_vfx("explosion", center, {"radius": radius})
 		
 	var ball_count = ammo + bonus_ammo
 	var inner_radius = radius * 0.4
@@ -839,10 +836,7 @@ func spawn_explosion_vfx(center: Vector2, radius: float):
 	)
 
 func do_oil_barrel_explosion(center: Vector2, radius: float, base_damage: int):
-	if MP.is_server():
-		play_vfx.rpc("oil_barrel", center, {"radius": radius})
-	else:
-		play_vfx("oil_barrel", center, {"radius": radius})
+	broadcast_vfx("oil_barrel", center, {"radius": radius})
 		
 	var inner_radius = radius * 0.3
 	for brick in brick_container.get_children():
@@ -903,10 +897,7 @@ func spawn_oil_barrel_vfx(center: Vector2, radius: float):
 	spawn_screen_flash_vfx()
 
 func spawn_railgun_trail(pos: Vector2):
-	if MP.is_server():
-		play_vfx.rpc("railgun_trail", pos)
-	else:
-		play_vfx("railgun_trail", pos)
+	broadcast_vfx("railgun_trail", pos)
 
 func spawn_railgun_trail_vfx(pos: Vector2):
 	var trail = Node2D.new()
@@ -930,10 +921,7 @@ func spawn_railgun_trail_vfx(pos: Vector2):
 	)
 
 func spawn_tunnel_hole(hit_point: Vector2):
-	if MP.is_server():
-		play_vfx.rpc("tunnel_hole", hit_point)
-	else:
-		play_vfx("tunnel_hole", hit_point)
+	broadcast_vfx("tunnel_hole", hit_point)
 
 func spawn_tunnel_hole_vfx(pos: Vector2):
 	var hole = Node2D.new()
@@ -950,10 +938,7 @@ func spawn_tunnel_hole_vfx(pos: Vector2):
 	tween.tween_callback(hole.queue_free)
 
 func spawn_purple_spray(hit_point: Vector2):
-	if MP.is_server():
-		play_vfx.rpc("purple_spray", hit_point)
-	else:
-		play_vfx("purple_spray", hit_point)
+	broadcast_vfx("purple_spray", hit_point)
 
 func spawn_purple_spray_vfx(pos: Vector2):
 	for i in range(8):
@@ -977,10 +962,7 @@ func spawn_purple_spray_vfx(pos: Vector2):
 
 func spawn_ammo_popup(count: int):
 	var lp = players[1].launch_point if players.has(1) else Vector2(195, arena_bottom)
-	if MP.is_server():
-		play_vfx.rpc("ammo_popup", lp, {"count": count})
-	else:
-		play_vfx("ammo_popup", lp, {"count": count})
+	broadcast_vfx("ammo_popup", lp, {"count": count})
 
 func spawn_ammo_popup_vfx(count: int):
 	for p in players.values():
@@ -1013,10 +995,7 @@ func spawn_ammo_popup_vfx(count: int):
 
 func spawn_modifier_popup(text: String, color: Color):
 	var lp = players[1].launch_point if players.has(1) else Vector2(195, arena_bottom)
-	if MP.is_server():
-		play_vfx.rpc("modifier_popup", lp, {"text": text, "color": color})
-	else:
-		play_vfx("modifier_popup", lp, {"text": text, "color": color})
+	broadcast_vfx("modifier_popup", lp, {"text": text, "color": color})
 
 func spawn_modifier_popup_vfx(text: String, color: Color):
 	var label = Label.new()
@@ -1034,10 +1013,7 @@ func spawn_modifier_popup_vfx(text: String, color: Color):
 	tween.chain().tween_callback(label.queue_free)
 
 func spawn_score_popup(pos: Vector2, points: int):
-	if MP.is_server():
-		play_vfx.rpc("score_popup", pos, {"points": points})
-	else:
-		play_vfx("score_popup", pos, {"points": points})
+	broadcast_vfx("score_popup", pos, {"points": points})
 
 func spawn_score_popup_vfx(pos: Vector2, points: int):
 	var label = Label.new()
@@ -1062,10 +1038,7 @@ func spawn_score_popup_vfx(pos: Vector2, points: int):
 	tween.chain().tween_callback(label.queue_free)
 
 func spawn_brick_particles_directional(pos: Vector2, color: Color, hit_dir: Vector2):
-	if MP.is_server():
-		play_vfx.rpc("brick_particles", pos, {"color": color, "hit_dir": hit_dir})
-	else:
-		play_vfx("brick_particles", pos, {"color": color, "hit_dir": hit_dir})
+	broadcast_vfx("brick_particles", pos, {"color": color, "hit_dir": hit_dir})
 
 func spawn_brick_particles_vfx(pos: Vector2, color: Color, hit_dir: Vector2):
 	add_shake(3.0)
@@ -1107,10 +1080,7 @@ func spawn_brick_particles(pos: Vector2, color: Color):
 	spawn_brick_particles_directional(pos, color, Vector2.DOWN)
 
 func play_board_clear():
-	if MP.is_server():
-		play_vfx.rpc("board_clear", Vector2.ZERO)
-	else:
-		play_vfx("board_clear", Vector2.ZERO)
+	broadcast_vfx("board_clear", Vector2.ZERO)
 
 func play_board_clear_vfx():
 	var rect = ColorRect.new()
@@ -1174,10 +1144,7 @@ func play_board_clear_vfx():
 	ltween.chain().tween_callback(label.queue_free)
 
 func spawn_screen_flash():
-	if MP.is_server():
-		play_vfx.rpc("screen_flash", Vector2.ZERO)
-	else:
-		play_vfx("screen_flash", Vector2.ZERO)
+	broadcast_vfx("screen_flash", Vector2.ZERO)
 
 func spawn_screen_flash_vfx():
 	var flash = ColorRect.new()
@@ -1192,10 +1159,7 @@ func spawn_screen_flash_vfx():
 	tween.tween_callback(flash.queue_free)
 
 func spawn_combo_text(combo: int):
-	if MP.is_server():
-		play_vfx.rpc("combo_text", Vector2.ZERO, {"combo": combo})
-	else:
-		play_vfx("combo_text", Vector2.ZERO, {"combo": combo})
+	broadcast_vfx("combo_text", Vector2.ZERO, {"combo": combo})
 
 func spawn_combo_text_vfx(combo: int):
 	# Reuse single label — remove old one
