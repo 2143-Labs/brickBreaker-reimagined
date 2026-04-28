@@ -20,22 +20,8 @@ func _ready():
 	add_child(warning_overlay)
 	warning_overlay.draw.connect(_draw_warning)
 	
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
-		request_initial_state.rpc_id(1)
-
-@rpc("any_peer", "call_remote")
-func request_initial_state():
-	if is_multiplayer_authority():
-		var sender = multiplayer.get_remote_sender_id()
-		sync_state.rpc_id(sender, position, health, max_health, burn_stacks)
-
-@rpc("authority", "call_remote")
-func sync_state(p_pos, p_health, p_max_health, p_burn_stacks):
-	position = p_pos
-	health = p_health
-	max_health = p_max_health
-	burn_stacks = p_burn_stacks
-	update_display()
+	if has_node("MultiplayerSynchronizer"):
+		$MultiplayerSynchronizer.synchronized.connect(update_display)
 
 func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
 	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():

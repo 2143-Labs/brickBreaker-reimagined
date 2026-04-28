@@ -7,20 +7,8 @@ var collected: bool = false
 func _ready():
 	queue_redraw()
 	body_entered.connect(_on_body_entered)
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
-		request_initial_state.rpc_id(1)
-
-@rpc("any_peer", "call_remote")
-func request_initial_state():
-	if is_multiplayer_authority():
-		var sender = multiplayer.get_remote_sender_id()
-		sync_state.rpc_id(sender, position, pickup_type)
-
-@rpc("authority", "call_remote")
-func sync_state(p_pos, p_type):
-	position = p_pos
-	pickup_type = p_type
-	queue_redraw()
+	if has_node("MultiplayerSynchronizer"):
+		$MultiplayerSynchronizer.synchronized.connect(queue_redraw)
 
 func _draw():
 	match pickup_type:

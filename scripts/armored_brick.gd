@@ -20,25 +20,12 @@ func _ready():
 	armor_overlay.draw.connect(_draw_armor)
 	armor_overlay.queue_redraw()
 	
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
-		request_initial_state.rpc_id(1)
-
-@rpc("any_peer", "call_remote")
-func request_initial_state():
-	if is_multiplayer_authority():
-		var sender = multiplayer.get_remote_sender_id()
-		sync_state.rpc_id(sender, position, health, max_health, burn_stacks, armored)
-
-@rpc("authority", "call_remote")
-func sync_state(p_pos, p_health, p_max_health, p_burn_stacks, p_armored):
-	position = p_pos
-	health = p_health
-	max_health = p_max_health
-	burn_stacks = p_burn_stacks
-	armored = p_armored
-	update_display()
-	if armor_overlay:
-		armor_overlay.queue_redraw()
+	if has_node("MultiplayerSynchronizer"):
+		$MultiplayerSynchronizer.synchronized.connect(func():
+			update_display()
+			if armor_overlay:
+				armor_overlay.queue_redraw()
+		)
 
 func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
 	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():

@@ -9,21 +9,10 @@ var rainbow_time: float = 0.0
 
 func _ready():
 	update_display()
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
-		request_initial_state.rpc_id(1)
+	if has_node("MultiplayerSynchronizer"):
+		$MultiplayerSynchronizer.synchronized.connect(update_display)
 
-@rpc("any_peer", "call_remote")
-func request_initial_state():
-	if is_multiplayer_authority():
-		var sender = multiplayer.get_remote_sender_id()
-		sync_state.rpc_id(sender, position, health, max_health)
 
-@rpc("authority", "call_remote")
-func sync_state(p_pos, p_health, p_max_health):
-	position = p_pos
-	health = p_health
-	max_health = p_max_health
-	update_display()
 
 func _process(delta):
 	rainbow_time += delta * 2.0

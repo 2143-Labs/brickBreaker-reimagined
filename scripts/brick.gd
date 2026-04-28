@@ -66,22 +66,9 @@ func _ready():
 	fire_overlay.material = fire_material
 	add_child(fire_overlay)
 	
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
-		request_initial_state.rpc_id(1)
+	if has_node("MultiplayerSynchronizer"):
+		$MultiplayerSynchronizer.synchronized.connect(update_display)
 
-@rpc("any_peer", "call_remote")
-func request_initial_state():
-	if is_multiplayer_authority():
-		var sender = multiplayer.get_remote_sender_id()
-		sync_state.rpc_id(sender, position, health, max_health, burn_stacks)
-
-@rpc("authority", "call_remote")
-func sync_state(p_pos, p_health, p_max_health, p_burn_stacks):
-	position = p_pos
-	health = p_health
-	max_health = p_max_health
-	burn_stacks = p_burn_stacks
-	update_display()
 
 func _process(_delta):
 	if burn_stacks > 0:

@@ -50,8 +50,13 @@ func _get_label_offset() -> Vector2:
 func _ready():
 	add_to_group("diagonal_bricks")
 	_init_shape()
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
-		request_initial_state.rpc_id(1)
+	
+	if has_node("MultiplayerSynchronizer"):
+		$MultiplayerSynchronizer.synchronized.connect(func():
+			_init_shape()
+			update_display()
+			queue_redraw()
+		)
 
 func _init_shape():
 	if collision_polygon:
@@ -65,20 +70,7 @@ func _init_shape():
 	update_display()
 	queue_redraw()
 
-@rpc("any_peer", "call_remote")
-func request_initial_state():
-	if is_multiplayer_authority():
-		var sender = multiplayer.get_remote_sender_id()
-		sync_state.rpc_id(sender, position, health, max_health, burn_stacks, orientation)
 
-@rpc("authority", "call_remote")
-func sync_state(p_pos, p_health, p_max_health, p_burn_stacks, p_orientation):
-	position = p_pos
-	health = p_health
-	max_health = p_max_health
-	burn_stacks = p_burn_stacks
-	orientation = p_orientation
-	_init_shape()
 
 func _process(delta):
 	if hit_flash > 0.0:
