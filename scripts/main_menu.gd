@@ -5,6 +5,7 @@ const STATS_PATH = "user://stats.save"
 
 @onready var title_label = $TitleLabel
 @onready var play_button = $PlayButton
+@onready var mode_button = $ModeButton
 @onready var multiplayer_button = $MultiplayerButton
 @onready var resume_button = $ResumeButton
 @onready var stats_button = $TileGrid/StatsButton
@@ -33,12 +34,22 @@ var save_round: int = 1
 var save_score: int = 0
 var anim_time: float = 0.0
 
+# ----- Mode selector -----
+const MODES = [
+	{ "id": 0, "label": "Classic", "desc": "CLASSIC · Break blocks. Chill vibes.",   "accent": UITheme.YELLOW },
+	{ "id": 1, "label": "Invasion", "desc": "INVASION · They're coming for you.",      "accent": UITheme.ROSE },
+	{ "id": 2, "label": "VS",  "desc": "VERSUS · Two launchers. One winner.",     "accent": UITheme.CYAN },
+]
+var _mode_index: int = 0
+
+
 func _ready():
 	load_stats()
 	load_high_score()
 	check_save_game()
 
 	play_button.pressed.connect(_on_play)
+	mode_button.pressed.connect(_cycle_mode)
 	multiplayer_button.pressed.connect(_on_multiplayer)
 	resume_button.pressed.connect(_on_resume)
 	stats_button.pressed.connect(_on_stats)
@@ -61,18 +72,16 @@ func _ready():
 
 	_build_player_chip()
 	_build_dotline()
-	_update_play_sub()
+	_apply_mode()
 
 	MusicManager.start_menu_music()
 
 
 func _process(delta):
 	anim_time += delta
-	# Subtle breathing on the title color
 	if title_label:
 		var pulse = sin(anim_time * 0.5) * 0.02
 		title_label.add_theme_color_override("font_color", UITheme.TEXT.lightened(pulse))
-	# Pulse the skill-tree dot if there are unspent points
 	var prog = get_node_or_null("/root/Progression")
 	if prog and prog.skill_points > 0:
 		var pulse_dot = $TileGrid/SkillTreeButton.get_node_or_null("AccentDot")
@@ -81,7 +90,37 @@ func _process(delta):
 			pulse_dot.modulate = Color(1, 1, 1, a)
 
 
+# ----- Mode selector -----
+
+func _cycle_mode() -> void:
+	_mode_index = (_mode_index + 1) % MODES.size()
+	_apply_mode()
+
+
+func _apply_mode() -> void:
+	var m = MODES[_mode_index]
+	GMode.set_mode(m.id)
+	mode_button.text = m.label
+	mode_button.add_theme_color_override("font_color", m.accent)
+	mode_button.add_theme_color_override("font_hover_color", m.accent)
+	_style_mode_button(m.accent)
+	_update_play_sub()
+
+
+func _style_mode_button(accent: Color) -> void:
+	var sb_normal = UITheme.make_card(Color(accent.r, accent.g, accent.b, 0.04), accent, UITheme.R_MD)
+	sb_normal.set_content_margin_all(14)
+	var sb_hover = sb_normal.duplicate()
+	sb_hover.bg_color = Color(accent.r, accent.g, accent.b, 0.10)
+	var sb_pressed = sb_normal.duplicate()
+	sb_pressed.bg_color = Color(accent.r, accent.g, accent.b, 0.16)
+	mode_button.add_theme_stylebox_override("normal",  sb_normal)
+	mode_button.add_theme_stylebox_override("hover",   sb_hover)
+	mode_button.add_theme_stylebox_override("pressed", sb_pressed)
+
+
 # ----- Primary button (corner brackets, accent border, big) -----
+
 func _style_primary_button(btn: Button, accent: Color) -> void:
 	if not btn: return
 	var sb_normal = UITheme.make_card(Color(accent.r, accent.g, accent.b, 0.04), accent, UITheme.R_MD)
@@ -102,9 +141,9 @@ func _style_primary_button(btn: Button, accent: Color) -> void:
 
 
 # ----- Secondary tile (card + label + sublabel + accent dot) -----
+
 func _style_tile(btn: Button, label: String, sub: String, accent: Color, hi: String = "", pulse: bool = false) -> void:
 	if not btn: return
-	# Clear button text — we'll draw our own children.
 	btn.text = ""
 	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	btn.clip_text = true
@@ -120,7 +159,6 @@ func _style_tile(btn: Button, label: String, sub: String, accent: Color, hi: Str
 	btn.add_theme_stylebox_override("hover",   sb_hover)
 	btn.add_theme_stylebox_override("pressed", sb_pressed)
 
-	# Wipe any previously added overlay children to keep _ready idempotent.
 	for c in btn.get_children():
 		if c.name in ["TileLabel", "TileSub", "TileHi", "AccentDot", "CornerBrackets"]:
 			c.queue_free()
@@ -144,7 +182,6 @@ func _style_tile(btn: Button, label: String, sub: String, accent: Color, hi: Str
 	sublbl.size = Vector2(120, 14)
 	sublbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(sublbl)
-	# When the button gets resized, snap sublabel to bottom.
 	btn.resized.connect(func():
 		sublbl.position.y = btn.size.y - 22
 	)
@@ -180,6 +217,7 @@ func _style_tile(btn: Button, label: String, sub: String, accent: Color, hi: Str
 
 
 # ----- Player chip (pill: LV·n | HI score | SP·n) -----
+
 func _build_player_chip() -> void:
 	if not player_chip: return
 	for c in player_chip.get_children():
@@ -230,7 +268,8 @@ func _chip_divider() -> ColorRect:
 	return d
 
 
-# ----- Bottom dotline (7 dots, first 3 lit by default) -----
+# ----- Bottom dotline (7 dots, lit by games played) -----
+
 func _build_dotline() -> void:
 	if not dotline: return
 	for c in dotline.get_children():
@@ -250,6 +289,7 @@ func _build_dotline() -> void:
 
 
 # ----- Helpers -----
+
 func _format_score(n: int) -> String:
 	var s := str(n)
 	var out := ""
@@ -273,15 +313,16 @@ func _skill_sub() -> String:
 func _update_play_sub() -> void:
 	if not play_sub_label:
 		return
-	if has_save:
+	var m = MODES[_mode_index]
+	if has_save and GMode.current == 0:
 		play_sub_label.text = "▸ CONTINUE · ROUND %d · SCORE %s" % [save_round, _format_score(save_score)]
 	else:
-		play_sub_label.text = "FRESH RUN · NO SAVE"
+		play_sub_label.text = m.desc
+	play_sub_label.add_theme_color_override("font_color", m.accent.darkened(0.3))
 
 
 func check_save_game():
 	has_save = FileAccess.file_exists("user://game_save.save")
-	# Best-effort peek for round/score — if the format isn't known, leave defaults.
 	if has_save:
 		var f = FileAccess.open("user://game_save.save", FileAccess.READ)
 		if f:
@@ -292,11 +333,14 @@ func check_save_game():
 			f.close()
 
 
+# ----- Navigation -----
+
 func _on_play():
 	if FileAccess.file_exists("user://game_save.save"):
 		DirAccess.remove_absolute("user://game_save.save")
 	increment_stat("total_games")
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
+
 
 func _on_multiplayer():
 	get_tree().change_scene_to_file("res://scenes/multiplayer_menu.tscn")
@@ -315,6 +359,8 @@ func _on_shop():
 	pass
 
 
+# ----- Stats panel -----
+
 func update_stats_display():
 	stats_text.text = "HIGH SCORE: %d\nBEST ROUND: %d\nTOTAL BRICKS: %d\nTOTAL ROUNDS: %d\nGAMES PLAYED: %d\nBOSSES KILLED: %d" % [
 		stats.get("high_score", 0),
@@ -325,6 +371,8 @@ func update_stats_display():
 		stats.get("bosses_killed", 0),
 	]
 
+
+# ----- Persistence -----
 
 func load_stats():
 	if FileAccess.file_exists(STATS_PATH):

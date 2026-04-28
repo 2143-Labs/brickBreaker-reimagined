@@ -24,6 +24,7 @@ const LIME_DIM = Color(0.494, 0.659, 0.169)    # #7ea82b
 const CYAN     = Color(0.424, 0.831, 1.0)      # #6cd4ff
 const AMBER    = Color(1.0, 0.761, 0.400)      # #ffc266
 const ROSE     = Color(1.0, 0.478, 0.541)      # #ff7a8a
+const YELLOW = Color(0.92, 0.84, 0.40)  # #ead466
 
 const LIME_SOFT  = Color(0.714, 0.949, 0.290, 0.06)
 const LIME_LINE  = Color(0.714, 0.949, 0.290, 0.35)

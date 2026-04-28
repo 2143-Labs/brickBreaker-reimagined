@@ -122,11 +122,21 @@ offset_bottom = 340.0
 layout_mode = 1
 offset_left = 36.0
 offset_top = 372.0
-offset_right = 354.0
+offset_right = 284.0
 offset_bottom = 422.0
 text = "▸ NEW GAME"
 theme_override_fonts/font = ExtResource("2")
 theme_override_font_sizes/font_size = 14
+
+[node name="ModeButton" type="Button" parent="."]
+layout_mode = 1
+offset_left = 290.0
+offset_top = 372.0
+offset_right = 354.0
+offset_bottom = 422.0
+text = "CLX"
+theme_override_fonts/font = ExtResource("2")
+theme_override_font_sizes/font_size = 10
 
 [node name="PlaySubLabel" type="Label" parent="."]
 layout_mode = 1
@@ -134,7 +144,7 @@ offset_left = 20.0
 offset_top = 428.0
 offset_right = 370.0
 offset_bottom = 444.0
-text = "CONTINUE · ROUND 1 · SCORE 0"
+text = "CLASSIC · Break blocks. Chill vibes."
 horizontal_alignment = 1
 theme_override_fonts/font = ExtResource("2")
 theme_override_font_sizes/font_size = 10
