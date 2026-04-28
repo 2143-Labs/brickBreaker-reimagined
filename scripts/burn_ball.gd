@@ -46,6 +46,7 @@ func _process(delta):
 		pulse_time += delta
 		queue_redraw()
 
+
 func _physics_process(delta):
 	if not launched or not is_active:
 		return
@@ -61,10 +62,9 @@ func _physics_process(delta):
 		var collider = collision.get_collider()
 		if collider.has_method("take_damage"):
 			collider.take_damage(1)
-			# Apply burn DOT
-			if collider.has_method("apply_burn"):
-				collider.apply_burn(burn_damage, burn_ticks)
-				# Visual: tint brick orange
+			# Corrected method name: add_burn_stack
+			if collider.has_method("add_burn_stack"):
+				collider.add_burn_stack()
 				if collider.has_node("Sprite"):
 					var sprite = collider.get_node("Sprite")
 					var tween = collider.create_tween()
@@ -73,10 +73,9 @@ func _physics_process(delta):
 
 	if position.y > 540:
 		is_active = false
-		ball_landed.emit(position.x, player_id)
-		ball_returned.emit(player_id)
+		ball_landed.emit(position.x, player_id) # Added player_id
+		ball_returned.emit(player_id)           # Added player_id
 		queue_free()
-
 func launch(dir: Vector2):
 	direction = dir
 	launched = true

@@ -129,6 +129,11 @@ func add_burn_stack():
     if armored:
         return  # Can't burn while armored
     burn_stacks += 1
+    # Visual feedback for burning
+    if sprite:
+        var tween = create_tween()
+        tween.tween_property(sprite, "modulate", Color(1.5, 0.8, 0.2), 0.1)
+        tween.tween_property(sprite, "modulate", Color(1, 1, 1), 0.2)
 func process_burn():
     if burn_stacks > 0 and not armored:
         take_damage(burn_stacks)

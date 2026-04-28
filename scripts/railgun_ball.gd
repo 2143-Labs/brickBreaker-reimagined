@@ -48,7 +48,6 @@ func _process(delta):
 		beam_points.append(position)
 		queue_redraw()
 
-
 func _physics_process(delta):
 	if not launched or not is_active:
 		return
@@ -113,8 +112,8 @@ func _physics_process(delta):
 			if brick.has_method("update_size"):
 				var dmg = max(1, int(brick.health / 2.0))
 				brick.take_damage(dmg, direction, true)
-				spawn_tunnel_hole(manager, hit_point)
-				spawn_purple_spray(manager, hit_point)
+				manager.spawn_tunnel_hole(hit_point)
+				manager.spawn_purple_spray(hit_point)
 			else:
 				if "railgun_death" in brick:
 					brick.railgun_death = true
@@ -122,19 +121,19 @@ func _physics_process(delta):
 					brick.railgun_hit_offset = hit_point - brick.position
 					manager.railgun_deaths_pending += 1
 				brick.take_damage(brick.health)
-				spawn_purple_spray(manager, hit_point)
+				manager.spawn_purple_spray(hit_point)
 
-			spawn_tunnel_hole(manager, hit_point)
+			manager.spawn_tunnel_hole(hit_point)
 
 	# Despawn off screen (only if no bounces left or past bounds)
 	if position.y > 600 or position.y < 40 or position.x < -20 or position.x > 410:
 		is_active = false
 		if manager:
 			spawn_beam_trail(manager)
-		ball_landed.emit(position.x)
-		ball_returned.emit()
+		ball_landed.emit(position.x, player_id)
+		ball_returned.emit(player_id)
 		queue_free()
-		
+
 func launch(dir: Vector2):
 	direction = dir
 	launched = true
@@ -159,38 +158,6 @@ func spawn_wall_spark(pos: Vector2):
 		tween.tween_property(p, "modulate:a", 0.0, 0.2)
 		tween.chain().tween_callback(p.queue_free)
 	manager.add_shake(1.5)
-
-func spawn_tunnel_hole(manager, pos: Vector2):
-	var hole = Node2D.new()
-	hole.position = pos
-	manager.particle_container.add_child(hole)
-	hole.draw.connect(func():
-		hole.draw_circle(Vector2.ZERO, 6, Color(1.0, 0.5, 0.1, hole.modulate.a * 0.6))
-		hole.draw_circle(Vector2.ZERO, 4, Color(1.0, 0.8, 0.3, hole.modulate.a * 0.8))
-		hole.draw_circle(Vector2.ZERO, 2.5, Color(0.1, 0.05, 0.0, hole.modulate.a))
-	)
-	hole.queue_redraw()
-	var tween = hole.create_tween()
-	tween.tween_property(hole, "modulate:a", 0.0, 1.5).set_ease(Tween.EASE_IN)
-	tween.tween_callback(hole.queue_free)
-
-func spawn_purple_spray(manager, pos: Vector2):
-	for i in range(8):
-		var p = ColorRect.new()
-		var s = randf_range(2, 5)
-		p.size = Vector2(s, s)
-		p.position = pos + Vector2(-s/2, -s/2)
-		p.color = [Color(0.6, 0.2, 0.9), Color(0.7, 0.3, 1.0), Color(0.5, 0.15, 0.8), Color(0.8, 0.4, 1.0)][randi() % 4]
-		manager.particle_container.add_child(p)
-		var angle = randf_range(0, TAU)
-		var dist = randf_range(15, 40)
-		var target = p.position + Vector2(cos(angle) * dist, sin(angle) * dist)
-		var tween = p.create_tween()
-		tween.set_parallel(true)
-		tween.tween_property(p, "position", target, 0.3).set_ease(Tween.EASE_OUT)
-		tween.tween_property(p, "modulate:a", 0.0, 0.3)
-		tween.chain().tween_callback(p.queue_free)
-	manager.add_shake(2.0)
 
 func spawn_beam_trail(manager):
 	if beam_points.size() < 2 or not manager:

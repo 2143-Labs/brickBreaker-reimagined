@@ -75,10 +75,18 @@ func launch(dir: Vector2):
 	launched = true
 
 func explode():
+	if not is_active: return
 	is_active = false
 	var manager = get_tree().get_first_node_in_group("game_manager")
 	if manager:
 		manager.do_explosion(global_position, explosion_radius)
-	ball_landed.emit(position.x, player_id)
-	ball_returned.emit(player_id)
+	ball_landed.emit(position.x, player_id) # Added player_id
+	ball_returned.emit(player_id)           # Added player_id
 	queue_free()
+
+# ... also replace the out-of-bounds logic in _physics_process ...
+	if position.y > 540:
+		is_active = false
+		ball_landed.emit(position.x, player_id)
+		ball_returned.emit(player_id)
+		queue_free()

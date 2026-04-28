@@ -2,7 +2,6 @@ extends CharacterBody2D
 
 signal ball_returned(p_id: int)
 signal ball_landed(x_pos: float, p_id: int)
-
 var direction: Vector2 = Vector2.ZERO
 var speed: float = 800.0
 var damage: int = 1
@@ -27,7 +26,6 @@ var max_trail_points: int = 8
 var trail_timer: float = 0.0
 var trail_interval: float = 0.015  # spawn trail dot every 15ms
 
-
 func _ready():
 	add_to_group("balls")
 	
@@ -40,11 +38,14 @@ func _ready():
 		config.add_property(".:is_powered")
 		config.property_set_replication_mode(".:is_powered", SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
 		config.add_property(".:applies_burn")
-		config.property_set_replication_mode(".:applies_burn", SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+		config.property_set_replication_mode(".:applies_burn", SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 		config.add_property(".:player_id")
 		config.property_set_replication_mode(".:player_id", SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
 		sync.replication_config = config
 		add_child(sync)
+		
+		# Ensure visual updates when burn flag arrives
+		sync.synchronized.connect(func(): queue_redraw())
 		
 		if not is_multiplayer_authority():
 			set_physics_process(false)

@@ -251,11 +251,12 @@ func _ready():
 
 	speed_button.pressed.connect(_on_speed_pressed)
 	restart_button.pressed.connect(_on_restart_pressed)
-	explosive_button.pressed.connect(func(): toggle_powerup(ActivePowerup.EXPLOSIVE))
-	railgun_button.pressed.connect(func(): toggle_powerup(ActivePowerup.RAILGUN))
-	burn_button.pressed.connect(func(): toggle_powerup(ActivePowerup.BURN))
+	
+	# Powerup buttons now use request RPCs for multiplayer
+	explosive_button.pressed.connect(func(): request_toggle_powerup(ActivePowerup.EXPLOSIVE))
+	railgun_button.pressed.connect(func(): request_toggle_powerup(ActivePowerup.RAILGUN))
+	burn_button.pressed.connect(func(): request_toggle_powerup(ActivePowerup.BURN))
 	nuke_button.pressed.connect(_on_nuke_pressed)
-
 	load_high_score()
 
 	# Apply talent effects
@@ -347,9 +348,6 @@ func _ready():
 		if magazine_2: magazine_2.visible = not am_server
 		if ammo_label_2: ammo_label_2.visible = not am_server
 
-
-
-
 func setup_multiplayer():
 	print("[NET] Setting up multiplayer. Server: ", multiplayer.is_server(), " ID: ", multiplayer.get_unique_id())
 	
@@ -373,6 +371,8 @@ func setup_multiplayer():
 	config.add_property(".:launch_point_2")
 	config.add_property(".:combo_count")
 	config.add_property(".:combo_timer")
+	config.add_property(".:nuke_charges")
+	config.add_property(".:burn_round_active") # Added this!
 	sync.replication_config = config
 	add_child(sync)
 	print("[NET] GlobalSynchronizer added")
@@ -568,6 +568,16 @@ func _on_restart_pressed():
 
 # ---- POWERUP MANAGEMENT ----
 
+func request_toggle_powerup(powerup: int):
+	if MultiplayerManager.is_multiplayer:
+		sync_powerup_selection.rpc(powerup)
+	else:
+		toggle_powerup(powerup)
+
+@rpc("any_peer", "call_local", "reliable")
+func sync_powerup_selection(powerup: int):
+	toggle_powerup(powerup)
+
 func toggle_powerup(powerup: int):
 	if not game_active:
 		return
@@ -725,36 +735,50 @@ func update_launcher_type():
 
 func _on_nuke_pressed():
 	if launcher:
-		launcher.set_type(4)
+		launcher.set_type(4) # NUKE visual briefly
 	if nuke_charges <= 0 or not game_active or is_sliding or is_dropping:
 		return
+		
+	if MultiplayerManager.is_multiplayer:
+		request_nuke.rpc_id(1)
+	else:
+		nuke_charges -= 1
+		do_nuke()
+		update_all_powerup_ui()
+
+@rpc("any_peer", "call_remote", "reliable")
+func request_nuke():
+	if not multiplayer.is_server() or nuke_charges <= 0: return
 	nuke_charges -= 1
 	do_nuke()
 	update_all_powerup_ui()
 
 func do_nuke():
+	# Server broadcasts nuke effects to all
 	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
 		_do_nuke_rpc.rpc()
 	else:
 		_do_nuke_rpc()
 
-@rpc("authority", "call_local")
+@rpc("authority", "call_local", "reliable")
 func _do_nuke_rpc():
 	sound_manager.play_nuke()
 	add_shake(12.0)
 	spawn_modifier_popup("☢ NUKE ☢", Color(1.0, 0.9, 0.2))
 
+	# Destroy all bricks with big VFX
 	var bricks = brick_container.get_children().duplicate()
 	for brick in bricks:
 		if is_instance_valid(brick) and brick is Node2D:
 			if brick.has_node("Sprite"):
 				spawn_brick_particles(brick.global_position, brick.get_node("Sprite").color)
-			if multiplayer.is_server() and brick.has_method("get_brick_value"):
-				add_score(brick.get_brick_value())
-			# Note: Server destroys the brick physically, client just plays VFX
-			if multiplayer.is_server():
+			# Only the server manages score and physical removal
+			if multiplayer.is_server() or not MultiplayerManager.is_multiplayer:
+				if brick.has_method("get_brick_value"):
+					add_score(brick.get_brick_value())
 				brick.queue_free()
 
+	# Big center explosion VFX
 	spawn_explosion_vfx(Vector2(195, arena_top + (arena_bottom - arena_top) / 2), 200)
 
 func create_preview_balls():
@@ -953,16 +977,16 @@ func start_firing_for_player(p_id: int, dir: Vector2):
 	if ammo_multiplier > 1.0:
 		total_ammo = int(total_ammo * ammo_multiplier)
 		
-	var is_first_shooter = not (p1_fired or p2_fired)
-	var p_type = active_powerup if is_first_shooter else ActivePowerup.NONE
+	# Fix: Remove is_first_shooter check. Whichever player starts firing 
+	# while a powerup is active will consume and use that powerup.
+	var p_type = active_powerup
 	
 	if p_id == 1:
 		p1_fired = true
 		p1_fire_dir = dir
 		p1_balls_to_spawn = total_ammo
-		p1_is_spawning = true
+		p1_is_spawning = (p1_balls_to_spawn > 0)
 		p1_first_ball_returned = false
-		p1_balls_in_play = 0
 		if preview_ball_1: preview_ball_1.visible = false
 		if ammo_label and (not MultiplayerManager.is_multiplayer or multiplayer.is_server()): ammo_label.visible = false
 		if aim_line: aim_line.clear_points()
@@ -971,30 +995,20 @@ func start_firing_for_player(p_id: int, dir: Vector2):
 		p2_fired = true
 		p2_fire_dir = dir
 		p2_balls_to_spawn = total_ammo
-		p2_is_spawning = true
+		p2_is_spawning = (p2_balls_to_spawn > 0)
 		p2_first_ball_returned = false
-		p2_balls_in_play = 0
 		if preview_ball_2: preview_ball_2.visible = false
 		if ammo_label_2 and (not MultiplayerManager.is_multiplayer or not multiplayer.is_server()): ammo_label_2.visible = false
 		if aim_line_2: aim_line_2.clear_points()
 		if trajectory_preview_2: trajectory_preview_2.clear_points()
 		
-	if is_first_shooter:
-		pending_xp = 0
-		if xp_preview_fill:
-			xp_preview_fill.visible = false
-			xp_preview_fill.offset_left = 60.0
-			xp_preview_fill.offset_right = 60.0
-
+	# Handle Powerup Logic
 	if p_type != ActivePowerup.NONE:
 		if p_type == ActivePowerup.BURN:
+			# BURN applies to all balls for both players this round
 			burn_round_active = true
 			set_cooldown(ActivePowerup.BURN)
 			active_powerup = ActivePowerup.NONE
-			update_all_powerup_ui()
-			update_launcher_type()
-			if launcher: launcher.clear_aim()
-			if launcher_2: launcher_2.clear_aim()
 		else:
 			var special_scene = null
 			match p_type:
@@ -1015,35 +1029,39 @@ func start_firing_for_player(p_id: int, dir: Vector2):
 					sound_manager.play_railgun()
 					railgun_active = true
 					
+				# Consume ammo for the special shot
 				if p_id == 1:
-					p1_balls_in_play += 1
 					if p_type == ActivePowerup.RAILGUN:
 						for i in range(p1_balls_to_spawn): 
 							if MultiplayerManager.is_multiplayer and multiplayer.is_server(): sync_magazine_fire.rpc(1)
 							else: sync_magazine_fire(1)
 						p1_balls_to_spawn = 0
+						p1_is_spawning = false
 					else:
 						if MultiplayerManager.is_multiplayer and multiplayer.is_server(): sync_magazine_fire.rpc(1)
 						else: sync_magazine_fire(1)
 						p1_balls_to_spawn -= 1
+						if p1_balls_to_spawn <= 0: p1_is_spawning = false
 				else:
-					p2_balls_in_play += 1
 					if p_type == ActivePowerup.RAILGUN:
 						for i in range(p2_balls_to_spawn): 
 							if MultiplayerManager.is_multiplayer and multiplayer.is_server(): sync_magazine_fire.rpc(2)
 							else: sync_magazine_fire(2)
 						p2_balls_to_spawn = 0
+						p2_is_spawning = false
 					else:
 						if MultiplayerManager.is_multiplayer and multiplayer.is_server(): sync_magazine_fire.rpc(2)
 						else: sync_magazine_fire(2)
 						p2_balls_to_spawn -= 1
+						if p2_balls_to_spawn <= 0: p2_is_spawning = false
 						
 				set_cooldown(p_type)
 				active_powerup = ActivePowerup.NONE
-				update_all_powerup_ui()
-				update_launcher_type()
-				if launcher: launcher.clear_aim()
-				if launcher_2: launcher_2.clear_aim()
+				
+		update_all_powerup_ui()
+		update_launcher_type()
+		if launcher: launcher.clear_aim()
+		if launcher_2: launcher_2.clear_aim()
 
 func do_launch_ball(p_id: int, dir: Vector2):
 	sound_manager.play("launch")
@@ -1053,18 +1071,12 @@ func do_launch_ball(p_id: int, dir: Vector2):
 	ball.speed = 800.0
 	ball.damage_multiplier = damage_multiplier * Progression.get_damage_multiplier()
 	ball.is_powered = (damage_multiplier > 1.0)
-	# If a burn round is active, this ball will apply burn stacks on hit
 	ball.applies_burn = burn_round_active
 	ball.ball_returned.connect(_on_ball_returned)
 	ball.ball_landed.connect(_on_ball_landed)
 	ball_container.add_child(ball, true)
 	ball.launch(dir)
 	
-	if p_id == 1:
-		p1_balls_in_play += 1
-	else:
-		p2_balls_in_play += 1
-
 	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
 		sync_magazine_fire.rpc(p_id)
 	else:
@@ -1341,19 +1353,15 @@ func _on_ball_landed(x_pos: float, p_id: int):
 		p2_first_ball_returned = true
 		if MultiplayerManager.is_multiplayer and multiplayer.is_server():
 			animate_launcher.rpc(2, nx)
-
-func _on_ball_returned(p_id: int):
-	if p_id == 1:
-		p1_balls_in_play -= 1
-	else:
-		p2_balls_in_play -= 1
-		
+func _on_ball_returned(p_id: int = 1):
+	# Update magazine visuals
 	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
 		sync_magazine_return.rpc(p_id)
 	else:
 		sync_magazine_return(p_id)
 		
-	check_round_end()
+	# Delay the check slightly to let queue_free finish
+	call_deferred("check_round_end")
 
 func on_ball_missed():
 	pass
@@ -1369,53 +1377,68 @@ func on_railgun_death_finished():
 		railgun_active = false
 		check_round_end()
 
-func check_round_end():
-	if MultiplayerManager.is_multiplayer and not multiplayer.is_server(): return
-	
-	var p1_done = (p1_balls_in_play <= 0 and not p1_is_spawning)
-	var p2_done = true
-	if MultiplayerManager.is_multiplayer:
-		p2_done = (p2_balls_in_play <= 0 and not p2_is_spawning)
-		
-	if p1_fired and p1_done and (not MultiplayerManager.is_multiplayer or (p2_fired and p2_done)):
-		if railgun_deaths_pending <= 0:
-			end_round()
 
+func check_round_end():
+	# Determine if any ball nodes actually still exist and aren't dying
+	var physical_balls = 0
+	for child in ball_container.get_children():
+		if is_instance_valid(child) and not child.is_queued_for_deletion():
+			physical_balls += 1
+	
+	# End round if no balls are left to fire AND no balls are flying
+	if not is_spawning and balls_in_play <= 0 and physical_balls == 0:
+		if railgun_deaths_pending > 0:
+			# Still waiting for railgun animations
+			return
+		end_round()
 func end_round():
+	# Reset firing flags for both players
 	p1_fired = false
 	p2_fired = false
 	board_clear_played = false
+	railgun_active = false # Reset railgun state
 	current_round += 1
 	
+	# Update launch origins for the next turn
 	launch_point_1.x = next_launch_x_1
 	launch_point_2.x = next_launch_x_2
 
+	# Apply round modifiers
 	damage_multiplier = next_round_damage_mult
 	ammo_multiplier = next_round_ammo_mult
 	next_round_damage_mult = 1.0
 	next_round_ammo_mult = 1.0
 
+	# Update magazine visuals
 	var mtint = Color(1, 1, 1, 0)
 	if damage_multiplier > 1.0: mtint = Color(0.9, 0.15, 0.1, 0.3)
 	elif ammo_multiplier > 1.0: mtint = Color(0.9, 0.7, 0.15, 0.3)
 	magazine.modifier_tint = mtint
 	if magazine_2: magazine_2.modifier_tint = mtint
 
+	# Progress cooldowns
 	tick_cooldowns()
 	update_all_powerup_ui()
 
+	# Process burn DOT on all bricks
 	for brick in brick_container.get_children():
+		if not brick is Node2D: continue
 		if brick.has_method("process_burn"):
 			brick.process_burn()
+		# Reset stacking hit counts for new round
 		if "hit_count" in brick:
 			brick.hit_count = 0
+		# Clear temporary railgun hit metadata
 		if brick.has_meta("railgun_hit"):
 			brick.remove_meta("railgun_hit")
+		# Regenerate boss shields
 		if brick.has_method("regenerate_shield"):
 			brick.regenerate_shield()
 
+	# Burn round modifier only applies to the current round's launched balls
 	burn_round_active = false
 
+	# Flash XP preview to green then apply
 	if pending_xp > 0 and xp_preview_fill:
 		xp_preview_fill.color = Color(0.741, 1.0, 0.024, 0.8)
 		var xp_tween = create_tween()
@@ -1431,17 +1454,17 @@ func end_round():
 
 	spawn_guardians_if_needed()
 
+	# Handle accumulated ammo from orbs
 	if pending_ammo > 0:
-		for i in range(pending_ammo):
-			magazine.add_ball_plop()
-			if magazine_2: magazine_2.add_ball_plop()
 		bonus_ammo += pending_ammo
 		spawn_ammo_popup(pending_ammo)
 		pending_ammo = 0
 
+	# Reset previews
 	create_preview_balls()
 	if preview_ball_1: preview_ball_1.visible = false
 	if preview_ball_2: preview_ball_2.visible = false
+	
 	update_launcher_type()
 	spawn_round_content()
 	start_slide_existing()

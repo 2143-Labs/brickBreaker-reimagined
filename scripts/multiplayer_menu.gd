@@ -5,6 +5,7 @@ extends Control
 @onready var join_button = $Panel/VBoxContainer/JoinButton
 @onready var status_label = $Panel/VBoxContainer/StatusLabel
 @onready var back_button = $Panel/BackButton
+@onready var title_label = $Panel/VBoxContainer/Title
 
 func _ready():
 	host_button.pressed.connect(_on_host_pressed)
@@ -15,6 +16,20 @@ func _ready():
 	MultiplayerManager.connection_succeeded.connect(_on_connection_succeeded)
 	
 	_style_ui()
+	_detect_local_ip()
+
+func _detect_local_ip():
+	var ips = IP.get_local_addresses()
+	var valid_ips = []
+	for ip in ips:
+		# Filter for standard local IPv4 addresses
+		if ip.begins_with("192.168.") or ip.begins_with("10.") or ip.begins_with("172."):
+			valid_ips.append(ip)
+	
+	if valid_ips.size() > 0:
+		title_label.text = "MULTIPLAYER\nYour IP: " + valid_ips[0]
+	else:
+		title_label.text = "MULTIPLAYER"
 
 func _style_ui():
 	var panel_sb = UITheme.make_card(UITheme.BG_CARD, UITheme.LINE, UITheme.R_LG)
@@ -37,19 +52,26 @@ func _style_button(btn: Button, accent: Color):
 	btn.add_theme_color_override("font_color", accent)
 
 func _on_host_pressed():
-	status_label.text = "HOSTING..."
+	status_label.text = "HOSTING... WAITING FOR P2"
 	MultiplayerManager.host_game()
 
 func _on_join_pressed():
-	var addr = address_input.text if address_input.text != "" else "127.0.0.1"
+	var addr = address_input.text.strip_edges()
+	if addr == "": 
+		addr = "127.0.0.1"
 	status_label.text = "JOINING " + addr + "..."
 	MultiplayerManager.join_game(addr)
 
 func _on_connection_failed():
-	status_label.text = "CONNECTION FAILED"
+	status_label.text = "CONNECTION FAILED OR TIMED OUT"
 
 func _on_connection_succeeded():
-	status_label.text = "CONNECTED! WAITING..."
+	if multiplayer.is_server():
+		status_label.text = "HOSTING... WAITING FOR P2"
+	else:
+		status_label.text = "CONNECTED! WAITING FOR SYNC..."
 
 func _on_back_pressed():
+	# Cleanly abort any hung connection attempts when backing out
+	MultiplayerManager.close_connection()
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
