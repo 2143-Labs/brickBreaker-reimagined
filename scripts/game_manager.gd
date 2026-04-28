@@ -165,7 +165,7 @@ func _ready():
 		if has_node(node_name):
 			get_node(node_name).queue_free()
 
-	if MultiplayerManager.is_multiplayer:
+	if MP.is_multiplayer:
 		setup_multiplayer()
 
 	# Create Players (P1 Always exists, P2 only in Multiplayer)
@@ -177,12 +177,12 @@ func _ready():
 	pc1.ammo_label = ammo_label
 	pc1.arena_left = arena_left
 	pc1.arena_right = arena_right
-	pc1.launch_point = Vector2(150.0 if MultiplayerManager.is_multiplayer else 195.0, arena_bottom + 20)
+	pc1.launch_point = Vector2(150.0 if MP.is_multiplayer else 195.0, arena_bottom + 20)
 	pc1.next_launch_x = pc1.launch_point.x
 	add_child(pc1)
 	players[1] = pc1
 
-	if MultiplayerManager.is_multiplayer:
+	if MP.is_multiplayer:
 		var pc2 = PLAYER_CONTROLLER_SCENE.instantiate()
 		pc2.name = "PlayerController2"
 		pc2.player_id = 2
@@ -219,7 +219,7 @@ func _ready():
 	railgun_cooldown_max = max(1, 8 - Progression.get_cooldown_reduction())
 	burn_cooldown_max = max(1, 5 - Progression.get_cooldown_reduction())
 
-	if not MultiplayerManager.is_multiplayer or multiplayer.is_server():
+	if not MP.is_client():
 		spawn_round_bricks_at_row0()
 		spawn_ammo_orbs_at_row0()
 
@@ -264,7 +264,7 @@ func _ready():
 
 	# Start game music and sync to client
 	MusicManager.start_game_music()
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		MusicManager.sync_current_track_to_clients()
 	
 	$HUD/GearButton.pressed.connect(func():
@@ -394,7 +394,7 @@ func _physics_process(delta):
 				item["orb"].position.y = lerp(float(item["from_y"]), float(item["to_y"]), t)
 
 func _process(delta):
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+	if not is_multiplayer_authority():
 		update_hud()
 		var total = ammo + bonus_ammo
 		for p in players.values():
@@ -402,7 +402,7 @@ func _process(delta):
 				p.magazine.set_ammo(total)
 
 	var my_p_id = 1
-	if MultiplayerManager.is_multiplayer and not multiplayer.is_server():
+	if MP.is_client():
 		my_p_id = 2
 		
 	var my_player = players.get(my_p_id)
@@ -410,13 +410,13 @@ func _process(delta):
 		if is_aiming and not my_player.has_fired and game_active and not is_sliding and not is_dropping:
 			var dir = (last_aim_pos - my_player.launch_point).normalized()
 			my_player.synced_aim_dir = dir
-			if MultiplayerManager.is_multiplayer:
+			if MP.is_multiplayer:
 				sync_aim.rpc(dir)
 		elif my_player.has_fired:
 			my_player.clear_aim()
 
 	if combo_timer > 0:
-		if not MultiplayerManager.is_multiplayer or is_multiplayer_authority():
+		if not MP.is_multiplayer or is_multiplayer_authority():
 			var slow_ratio = clamp(combo_slow_timer / 0.1, 0.0, 1.0)
 			var decay_rate = lerp(1.0, 0.2, slow_ratio)
 			combo_timer -= delta * decay_rate
@@ -429,7 +429,7 @@ func _process(delta):
 	elif combo_bar and combo_bar.visible:
 		combo_bar.visible = false
 
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+	if not is_multiplayer_authority():
 		for brick in brick_container.get_children():
 			if not brick is Node2D: continue
 			var current_hp = brick.get("health")
@@ -462,7 +462,7 @@ func _on_restart_pressed():
 # ---- POWERUP MANAGEMENT ----
 
 func request_toggle_powerup(powerup: int):
-	if MultiplayerManager.is_multiplayer:
+	if MP.is_multiplayer:
 		sync_powerup_selection.rpc(powerup)
 	else:
 		toggle_powerup(powerup)
@@ -630,7 +630,7 @@ func _on_nuke_pressed():
 	if nuke_charges <= 0 or not game_active or is_sliding or is_dropping:
 		return
 		
-	if MultiplayerManager.is_multiplayer:
+	if MP.is_multiplayer:
 		request_nuke.rpc_id(1)
 	else:
 		nuke_charges -= 1
@@ -639,14 +639,14 @@ func _on_nuke_pressed():
 
 @rpc("any_peer", "call_remote", "reliable")
 func request_nuke():
-	if not multiplayer.is_server() or nuke_charges <= 0: return
+	if not MP.is_server() or nuke_charges <= 0: return
 	nuke_charges -= 1
 	do_nuke()
 	update_all_powerup_ui()
 
 func do_nuke():
 	# Server broadcasts nuke effects to all
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		play_vfx.rpc("nuke", Vector2(195, arena_top + (arena_bottom - arena_top) / 2))
 	else:
 		play_vfx("nuke", Vector2(195, arena_top + (arena_bottom - arena_top) / 2))
@@ -656,13 +656,13 @@ func do_nuke():
 	for brick in bricks:
 		if is_instance_valid(brick) and brick is Node2D:
 			if brick.has_node("Sprite"):
-				if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+				if MP.is_server():
 					play_vfx.rpc("brick_particles", brick.global_position, {"color": brick.get_node("Sprite").color, "hit_dir": Vector2.DOWN})
 				else:
 					play_vfx("brick_particles", brick.global_position, {"color": brick.get_node("Sprite").color, "hit_dir": Vector2.DOWN})
 			
 			# Only the server manages score and physical removal
-			if multiplayer.is_server() or not MultiplayerManager.is_multiplayer:
+			if not MP.is_client():
 				if brick.has_method("get_brick_value"):
 					add_score(brick.get_brick_value())
 				brick.queue_free()
@@ -671,7 +671,7 @@ func do_nuke():
 
 func _input(event):
 	var my_p_id = 1
-	if MultiplayerManager.is_multiplayer and not multiplayer.is_server():
+	if MP.is_client():
 		my_p_id = 2
 		
 	var my_player = players.get(my_p_id)
@@ -688,12 +688,12 @@ func _input(event):
 			is_aiming = false
 			var dir = (pos - my_player.launch_point).normalized()
 			if dir.y < -0.1:
-				if MultiplayerManager.is_multiplayer:
+				if MP.is_multiplayer:
 					request_fire.rpc_id(1, dir)
 				else:
 					start_firing_for_player(my_p_id, dir)
 			my_player.synced_aim_dir = Vector2.DOWN
-			if MultiplayerManager.is_multiplayer:
+			if MP.is_multiplayer:
 				sync_aim.rpc(Vector2.DOWN)
 				
 	if event is InputEventMouseMotion or event is InputEventScreenDrag:
@@ -701,7 +701,7 @@ func _input(event):
 			var dir = (event.position - my_player.launch_point).normalized()
 			last_aim_pos = event.position
 			my_player.synced_aim_dir = dir
-			if MultiplayerManager.is_multiplayer:
+			if MP.is_multiplayer:
 				sync_aim.rpc(dir)
 
 @rpc("any_peer", "call_remote", "unreliable")
@@ -713,7 +713,7 @@ func sync_aim(dir: Vector2):
 
 @rpc("any_peer", "call_local")
 func request_fire(dir: Vector2):
-	if not multiplayer.is_server(): return
+	if not MP.is_server(): return
 	var sender = multiplayer.get_remote_sender_id()
 	var p_id = 1 if sender == 1 else 2
 	start_firing_for_player(p_id, dir)
@@ -743,7 +743,7 @@ func start_firing_for_player(p_id: int, dir: Vector2):
 	var dmg_mult = damage_multiplier * Progression.get_damage_multiplier()
 	
 	if players.has(p_id):
-		if MultiplayerManager.is_multiplayer:
+		if MP.is_multiplayer:
 			players[p_id].start_firing_rpc.rpc(dir, total_ammo, p_type, dmg_mult, burn_round_active, is_powered)
 		else:
 			players[p_id].start_firing_rpc(dir, total_ammo, p_type, dmg_mult, burn_round_active, is_powered)
@@ -788,7 +788,7 @@ func play_vfx(vfx_type: String, pos: Vector2, data: Dictionary = {}):
 			spawn_explosion_vfx(pos, 200.0)
 
 func do_explosion(center: Vector2, radius: float):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		play_vfx.rpc("explosion", center, {"radius": radius})
 	else:
 		play_vfx("explosion", center, {"radius": radius})
@@ -839,7 +839,7 @@ func spawn_explosion_vfx(center: Vector2, radius: float):
 	)
 
 func do_oil_barrel_explosion(center: Vector2, radius: float, base_damage: int):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		play_vfx.rpc("oil_barrel", center, {"radius": radius})
 	else:
 		play_vfx("oil_barrel", center, {"radius": radius})
@@ -903,7 +903,7 @@ func spawn_oil_barrel_vfx(center: Vector2, radius: float):
 	spawn_screen_flash_vfx()
 
 func spawn_railgun_trail(pos: Vector2):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		play_vfx.rpc("railgun_trail", pos)
 	else:
 		play_vfx("railgun_trail", pos)
@@ -930,7 +930,7 @@ func spawn_railgun_trail_vfx(pos: Vector2):
 	)
 
 func spawn_tunnel_hole(hit_point: Vector2):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		play_vfx.rpc("tunnel_hole", hit_point)
 	else:
 		play_vfx("tunnel_hole", hit_point)
@@ -950,7 +950,7 @@ func spawn_tunnel_hole_vfx(pos: Vector2):
 	tween.tween_callback(hole.queue_free)
 
 func spawn_purple_spray(hit_point: Vector2):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		play_vfx.rpc("purple_spray", hit_point)
 	else:
 		play_vfx("purple_spray", hit_point)
@@ -977,7 +977,7 @@ func spawn_purple_spray_vfx(pos: Vector2):
 
 func spawn_ammo_popup(count: int):
 	var lp = players[1].launch_point if players.has(1) else Vector2(195, arena_bottom)
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		play_vfx.rpc("ammo_popup", lp, {"count": count})
 	else:
 		play_vfx("ammo_popup", lp, {"count": count})
@@ -1013,7 +1013,7 @@ func spawn_ammo_popup_vfx(count: int):
 
 func spawn_modifier_popup(text: String, color: Color):
 	var lp = players[1].launch_point if players.has(1) else Vector2(195, arena_bottom)
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		play_vfx.rpc("modifier_popup", lp, {"text": text, "color": color})
 	else:
 		play_vfx("modifier_popup", lp, {"text": text, "color": color})
@@ -1034,7 +1034,7 @@ func spawn_modifier_popup_vfx(text: String, color: Color):
 	tween.chain().tween_callback(label.queue_free)
 
 func spawn_score_popup(pos: Vector2, points: int):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		play_vfx.rpc("score_popup", pos, {"points": points})
 	else:
 		play_vfx("score_popup", pos, {"points": points})
@@ -1062,7 +1062,7 @@ func spawn_score_popup_vfx(pos: Vector2, points: int):
 	tween.chain().tween_callback(label.queue_free)
 
 func spawn_brick_particles_directional(pos: Vector2, color: Color, hit_dir: Vector2):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		play_vfx.rpc("brick_particles", pos, {"color": color, "hit_dir": hit_dir})
 	else:
 		play_vfx("brick_particles", pos, {"color": color, "hit_dir": hit_dir})
@@ -1107,7 +1107,7 @@ func spawn_brick_particles(pos: Vector2, color: Color):
 	spawn_brick_particles_directional(pos, color, Vector2.DOWN)
 
 func play_board_clear():
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		play_vfx.rpc("board_clear", Vector2.ZERO)
 	else:
 		play_vfx("board_clear", Vector2.ZERO)
@@ -1174,7 +1174,7 @@ func play_board_clear_vfx():
 	ltween.chain().tween_callback(label.queue_free)
 
 func spawn_screen_flash():
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		play_vfx.rpc("screen_flash", Vector2.ZERO)
 	else:
 		play_vfx("screen_flash", Vector2.ZERO)
@@ -1192,7 +1192,7 @@ func spawn_screen_flash_vfx():
 	tween.tween_callback(flash.queue_free)
 
 func spawn_combo_text(combo: int):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		play_vfx.rpc("combo_text", Vector2.ZERO, {"combo": combo})
 	else:
 		play_vfx("combo_text", Vector2.ZERO, {"combo": combo})
@@ -1419,7 +1419,7 @@ func spawn_guardians_if_needed():
 					brick_container.add_child(g, true)
 
 func spawn_round_content():
-	if MultiplayerManager.is_multiplayer and not multiplayer.is_server():
+	if MP.is_client():
 		return
 	try_spawn_pending_elite()
 	try_spawn_boss()
@@ -1762,18 +1762,18 @@ func after_drop_complete():
 	for p in players.values():
 		p.update_ammo_label_position()
 	
-	if not MultiplayerManager.is_multiplayer or multiplayer.is_server():
+	if not MP.is_client():
 		if players.has(1) and players[1].ammo_label: players[1].ammo_label.visible = true
 		if players.has(1): players[1].set_preview_visible(true)
 			
-	if not MultiplayerManager.is_multiplayer or not multiplayer.is_server():
+	if not MP.is_server():
 		if players.has(2) and players[2].ammo_label: players[2].ammo_label.visible = true
 		if players.has(2): players[2].set_preview_visible(true)
 		
 	sound_manager.play_reload()
 	update_launcher_type()
 	
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		_client_after_drop_rpc.rpc()
 
 @rpc("authority", "call_remote")

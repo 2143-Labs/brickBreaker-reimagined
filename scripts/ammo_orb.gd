@@ -16,7 +16,7 @@ func _draw():
 func _on_body_entered(body):
 	if collected:
 		return
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+	if not is_multiplayer_authority():
 		return
 	if body.is_in_group("balls"):
 		collected = true

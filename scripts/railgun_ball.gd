@@ -22,7 +22,7 @@ func _ready():
 	$CollisionShape2D.disabled = true
 	bounces_remaining = Progression.get_railgun_bounces()
 	
-	if MultiplayerManager.is_multiplayer:
+	if MP.is_multiplayer:
 		var sync = MultiplayerSynchronizer.new()
 		sync.name = "BallSync"
 		var config = SceneReplicationConfig.new()
@@ -44,7 +44,7 @@ func _draw():
 	draw_circle(Vector2.ZERO, 11, Color(0.2, 0.7, 1.0, 0.15))
 
 func _process(delta):
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+	if not is_multiplayer_authority():
 		beam_points.append(position)
 		queue_redraw()
 

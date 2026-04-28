@@ -18,7 +18,7 @@ func _ready():
 	add_to_group("balls")
 	explosion_radius = 110.0 * Progression.get_explosion_radius_mult()
 	
-	if MultiplayerManager.is_multiplayer:
+	if MP.is_multiplayer:
 		var sync = MultiplayerSynchronizer.new()
 		sync.name = "BallSync"
 		var config = SceneReplicationConfig.new()
@@ -43,7 +43,7 @@ func _draw():
 	draw_circle(Vector2.ZERO, 3, Color(1, 1, 1, 0.8))
 
 func _process(delta):
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+	if not is_multiplayer_authority():
 		pulse_time += delta
 		queue_redraw()
 

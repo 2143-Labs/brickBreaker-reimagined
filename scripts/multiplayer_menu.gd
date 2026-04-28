@@ -19,14 +19,14 @@ func _ready():
 	$Panel/BackButton.pressed.connect(_on_back)
 
 	# Connect Manager Signals
-	MultiplayerManager.lobby_list_received.connect(_on_lobbies_found)
-	MultiplayerManager.connection_failed.connect(_on_connection_failed)
-	MultiplayerManager.connection_succeeded.connect(_on_connected_ui_update)
+	MP.lobby_list_received.connect(_on_lobbies_found)
+	MP.connection_failed.connect(_on_connection_failed)
+	MP.connection_succeeded.connect(_on_connected_ui_update)
 	
 	_style_ui()
 	
 	# Initial Steam Check
-	if MultiplayerManager.is_on_steam:
+	if MP.is_on_steam:
 		status_label.text = "STEAM ACTIVE: " + Steam.getPersonaName()
 		invite_btn.visible = false
 	else:
@@ -56,15 +56,15 @@ func _style_btn(btn: Button, accent: Color):
 	btn.add_theme_color_override("font_color", accent)
 
 func _on_host_steam():
-	MultiplayerManager.host_steam()
+	MP.host_steam()
 	status_label.text = "CREATING STEAM LOBBY..."
 
 func _on_invite_pressed():
-	MultiplayerManager.open_invite_dialog()
+	MP.open_invite_dialog()
 
 func _on_refresh_steam():
 	for child in lobby_list.get_children(): child.queue_free()
-	MultiplayerManager.find_steam_lobbies()
+	MP.find_steam_lobbies()
 	status_label.text = "SEARCHING STEAM..."
 
 
@@ -72,7 +72,7 @@ func _on_lobbies_found(lobbies):
 	status_label.text = "FOUND %d LOBBIES" % lobbies.size()
 	for id in lobbies:
 		var lobby_name = Steam.getLobbyData(id, "name")
-		var ping = MultiplayerManager.get_ping_to_lobby(id)
+		var ping = MP.get_ping_to_lobby(id)
 		
 		# Create the button container
 		var h_box = HBoxContainer.new()
@@ -103,7 +103,7 @@ func _on_lobbies_found(lobbies):
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		
 		# Connect button
-		btn.pressed.connect(func(): MultiplayerManager.join_steam_lobby(id))
+		btn.pressed.connect(func(): MP.join_steam_lobby(id))
 		
 		# Add to list
 		h_box.add_child(ping_label)
@@ -111,17 +111,17 @@ func _on_lobbies_found(lobbies):
 		lobby_list.add_child(h_box)
 
 func _on_host_ip():
-	MultiplayerManager.host_ip()
+	MP.host_ip()
 	status_label.text = "IP HOST STARTED"
 
 func _on_join_ip():
-	MultiplayerManager.join_ip(ip_input.text)
+	MP.join_ip(ip_input.text)
 	status_label.text = "JOINING IP..."
 
 func _on_connected_ui_update():
 	status_label.text = "CONNECTED"
 	# Show invite button if we are hosting a steam lobby
-	if MultiplayerManager.using_steam and multiplayer.is_server():
+	if MP.using_steam and MP.is_server():
 		invite_btn.visible = true
 		host_steam_btn.visible = false
 	else:
@@ -134,5 +134,5 @@ func _on_connection_failed():
 	host_steam_btn.visible = true
 
 func _on_back():
-	MultiplayerManager.close_connection()
+	MP.close_connection()
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")

@@ -80,7 +80,7 @@ func _process(_delta):
 		fire_overlay.visible = false
 
 func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+	if not is_multiplayer_authority():
 		return
 	last_hit_direction = hit_dir
 

@@ -15,7 +15,7 @@ var player_id: int = 1
 func _ready():
 	add_to_group("balls")
 	
-	if MultiplayerManager.is_multiplayer:
+	if MP.is_multiplayer:
 		var sync = MultiplayerSynchronizer.new()
 		sync.name = "BallSync"
 		var config = SceneReplicationConfig.new()
@@ -42,7 +42,7 @@ func _draw():
 	draw_circle(Vector2(randf_range(-3, 3), flame_y), 3, Color(1.0, 0.6, 0.1, 0.5 + pulse * 0.3))
 
 func _process(delta):
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+	if not is_multiplayer_authority():
 		pulse_time += delta
 		queue_redraw()
 

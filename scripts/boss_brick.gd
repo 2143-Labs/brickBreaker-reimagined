@@ -67,7 +67,7 @@ func update_size():
 	shield_bar.offset_bottom = -half_h - 1
 
 func take_damage(amount: int, _hit_dir: Vector2 = Vector2.DOWN, is_special: bool = false):
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+	if not is_multiplayer_authority():
 		return
 	# Bosses and elites take 50% less from bombs and railguns
 	if is_special:

@@ -44,7 +44,7 @@ func _ready():
 		)
 
 func _process(delta):
-	if not MultiplayerManager.is_multiplayer or is_multiplayer_authority():
+	if not MP.is_multiplayer or is_multiplayer_authority():
 		rotation += spin_speed * delta
 	
 	if hit_flash > 0.0:
@@ -72,7 +72,7 @@ func _draw():
 	draw_polyline(outline, Color(0.15, 0.12, 0.1, 0.8), 1.5, true)
 
 func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+	if not is_multiplayer_authority():
 		return
 	last_hit_direction = hit_dir
 	health -= amount

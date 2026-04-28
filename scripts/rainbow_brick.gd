@@ -26,7 +26,7 @@ func _draw():
 	draw_circle(Vector2(-8 * cos(rainbow_time * 2.5), -6 * sin(rainbow_time * 3.5)), 2, sparkle_color)
 
 func take_damage(amount: int, _hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+	if not is_multiplayer_authority():
 		return
 	health -= amount
 	if health <= 0:

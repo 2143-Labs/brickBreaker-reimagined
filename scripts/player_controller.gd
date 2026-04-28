@@ -38,8 +38,8 @@ func _ready():
 	magazine.player_id = player_id
 	
 	# Visibility rules for Co-Op
-	if MultiplayerManager.is_multiplayer:
-		var am_server = multiplayer.is_server()
+	if MP.is_multiplayer:
+		var am_server = MP.is_server()
 		# Only show magazine for the local player's gun
 		if (player_id == 1 and not am_server) or (player_id == 2 and am_server):
 			magazine.visible = false
@@ -95,7 +95,7 @@ func do_launch_ball(dir: Vector2):
 	ball_container.add_child(ball, true)
 	ball.launch(dir)
 	
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		sync_magazine_fire.rpc()
 	else:
 		sync_magazine_fire()
@@ -106,7 +106,7 @@ func start_firing_rpc(dir: Vector2, total_ammo: int, p_type: int, dmg_mult: floa
 	first_ball_returned = false
 	
 	preview_ball.visible = false
-	if ammo_label and (not MultiplayerManager.is_multiplayer or (player_id == 1 and multiplayer.is_server()) or (player_id == 2 and not multiplayer.is_server())):
+	if ammo_label and (not MP.is_multiplayer or (player_id == 1 and MP.is_server()) or (player_id == 2 and MP.is_client())):
 		ammo_label.visible = false
 		
 	synced_aim_dir = Vector2.DOWN # Clears aim
@@ -118,7 +118,7 @@ func start_firing_rpc(dir: Vector2, total_ammo: int, p_type: int, dmg_mult: floa
 	update_powerup_state(p_type, is_powered)
 
 	# Only the server physically spawns the balls and progresses the spawning state loop
-	if not MultiplayerManager.is_multiplayer or multiplayer.is_server():
+	if not MP.is_client():
 		fire_dir = dir
 		balls_to_spawn = total_ammo
 		is_spawning = (balls_to_spawn > 0)
@@ -143,12 +143,12 @@ func start_firing_rpc(dir: Vector2, total_ammo: int, p_type: int, dmg_mult: floa
 						game_manager.sound_manager.play_railgun()
 						game_manager.railgun_active = true
 					for i in range(balls_to_spawn): 
-						if MultiplayerManager.is_multiplayer: sync_magazine_fire.rpc()
+						if MP.is_multiplayer: sync_magazine_fire.rpc()
 						else: sync_magazine_fire()
 					balls_to_spawn = 0
 					is_spawning = false
 				else: # EXPLOSIVE
-					if MultiplayerManager.is_multiplayer: sync_magazine_fire.rpc()
+					if MP.is_multiplayer: sync_magazine_fire.rpc()
 					else: sync_magazine_fire()
 					balls_to_spawn -= 1
 					if balls_to_spawn <= 0: is_spawning = false
@@ -156,16 +156,16 @@ func handle_ball_landed(x_pos: float, p_id: int):
 	var nx = clamp(x_pos, arena_left + 15, arena_right - 15)
 	if not first_ball_returned:
 		first_ball_returned = true
-		if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		if MP.is_server():
 			animate_launcher.rpc(nx)
-		elif not MultiplayerManager.is_multiplayer:
+		elif not MP.is_multiplayer:
 			animate_launcher(nx)
 			
 	if game_manager:
 		game_manager._on_ball_landed(x_pos, p_id)
 
 func handle_ball_returned(p_id: int):
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		sync_magazine_return.rpc()
 	else:
 		sync_magazine_return()

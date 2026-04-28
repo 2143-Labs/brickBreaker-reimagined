@@ -48,7 +48,7 @@ func _on_lobby_created(connect_id: int, lobby_id_node: int):
 		var error = peer.create_host(lobby_id)
 		if error == OK:
 			multiplayer.multiplayer_peer = peer
-			MultiplayerManager.is_multiplayer = true
+			MP.is_multiplayer = true
 			print("Steam Host Started")
 		else:
 			print("Failed to create Steam Host: %s" % error)
@@ -66,7 +66,7 @@ func join_lobby(lobby_id_to_join: int):
 	var error = peer.create_client(lobby_id_to_join)
 	if error == OK:
 		multiplayer.multiplayer_peer = peer
-		MultiplayerManager.is_multiplayer = true
+		MP.is_multiplayer = true
 	else:
 		print("Failed to join Steam Client: %s" % error)
 

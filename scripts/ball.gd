@@ -29,7 +29,7 @@ var trail_interval: float = 0.015  # spawn trail dot every 15ms
 func _ready():
 	add_to_group("balls")
 	
-	if MultiplayerManager.is_multiplayer:
+	if MP.is_multiplayer:
 		var sync = MultiplayerSynchronizer.new()
 		sync.name = "BallSync"
 		var config = SceneReplicationConfig.new()
@@ -85,7 +85,7 @@ func _draw():
 		draw_circle(Vector2.ZERO, 8, Color(0.3, 0.55, 0.95))
 
 func _process(delta):
-	if MultiplayerManager.is_multiplayer and not is_multiplayer_authority():
+	if not is_multiplayer_authority():
 		queue_redraw()
 		if is_active:
 			trail_timer += delta

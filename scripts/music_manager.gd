@@ -49,7 +49,7 @@ func _on_track_finished():
 		play_next_game_track()
 func play_next_game_track():
 	# Only the server (or singleplayer) decides the next track
-	if MultiplayerManager.is_multiplayer and not multiplayer.is_server():
+	if MP.is_client():
 		return
 
 	if shuffle_queue.size() == 0:
@@ -60,7 +60,7 @@ func play_next_game_track():
 	var path = shuffle_queue[current_track_index]
 	current_track_index += 1
 
-	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+	if MP.is_server():
 		_play_specific_track_rpc.rpc(path, 0.0)
 	else:
 		_play_specific_track_rpc(path, 0.0)
