@@ -5,88 +5,164 @@ signal connection_succeeded
 signal player_connected(id)
 signal player_disconnected(id)
 signal game_started
+signal lobby_list_received(lobbies)
 
-var peer = ENetMultiplayerPeer.new()
-const DEFAULT_PORT = 7777
-const DEFAULT_IP = "127.0.0.1"
+var enet_peer: ENetMultiplayerPeer
+var steam_peer: SteamMultiplayerPeer
 
 var is_multiplayer: bool = false
+var is_on_steam: bool = false
+var lobby_id: int = 0
+var using_steam: bool = false
+
+const DEFAULT_PORT = 7777
 
 func _ready():
-	# Bind network lifecycle signals once globally so they never double-fire or disconnect
-	multiplayer.peer_connected.connect(_on_player_connected)
-	multiplayer.peer_disconnected.connect(_on_player_disconnected)
-	multiplayer.connected_to_server.connect(_on_connection_succeeded)
-	multiplayer.connection_failed.connect(_on_connection_failed)
+	_initialize_steam()
+	multiplayer.peer_connected.connect(_on_peer_connected)
+	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
 
-func host_game(port = DEFAULT_PORT):
-	close_connection() # Clean up any hung sockets
-	var error = peer.create_server(port, 2)
-	if error != OK:
-		print("Failed to host: ", error)
-		connection_failed.emit()
-		return error
-	
-	multiplayer.multiplayer_peer = peer
-	is_multiplayer = true
-	print("Hosting on port ", port)
-	connection_succeeded.emit()
-	return OK
+func _initialize_steam():
+	# Check if the Steam object exists (GDExtension loaded)
+	if not Engine.has_singleton("Steam"):
+		is_on_steam = false
+		print("Steam GDExtension not found!")
+		return
 
-func join_game(address = DEFAULT_IP, port = DEFAULT_PORT):
-	close_connection() # Clean up any hung sockets
+	var response = Steam.steamInitEx()
+	if response['status'] == 0:
+		is_on_steam = true
+		print("Steam Initialized: ", Steam.getPersonaName())
+		Steam.lobby_created.connect(_on_lobby_created)
+		Steam.lobby_match_list.connect(_on_lobby_match_list)
+		Steam.join_requested.connect(_on_lobby_join_requested)
+	else:
+		is_on_steam = false
+		print("Steam Failed to Initialize.")
+
+func _process(_delta):
+	if is_on_steam:
+		Steam.run_callbacks()
+
+# --- STEAM LOGIC ---
+
+func host_steam():
+	if not is_on_steam: return
 	
-	# Strip any accidental spaces from typing
-	address = address.strip_edges()
-	if address == "":
-		address = "127.0.0.1"
+	close_connection()
+	using_steam = true
+	# Type 2 = Public, 2 players max
+	Steam.createLobby(Steam.LOBBY_TYPE_PUBLIC, 2)
+
+func _on_lobby_created(result: int, new_lobby_id: int):
+	if result == 1: # 1 = k_EResultOK
+		lobby_id = new_lobby_id
 		
-	var error = peer.create_client(address, port)
-	if error != OK:
-		print("Failed to join: ", error)
+		Steam.setLobbyData(lobby_id, "name", Steam.getPersonaName() + "'s Lofi Room")
+		Steam.setLobbyData(lobby_id, "game", "lofi_brick_breaker")
+		
+		steam_peer = SteamMultiplayerPeer.new()
+		
+		# FIX: Only 1 argument (lobby_id)
+		var error = steam_peer.create_host(lobby_id)
+		
+		if error == OK:
+			multiplayer.multiplayer_peer = steam_peer
+			is_multiplayer = true
+			connection_succeeded.emit()
+		else:
+			print("Steam Host Error: ", error)
+			connection_failed.emit()
+	else:
 		connection_failed.emit()
-		return error
+
+func join_steam_lobby(id: int):
+	close_connection()
+	using_steam = true
+	steam_peer = SteamMultiplayerPeer.new()
 	
-	multiplayer.multiplayer_peer = peer
-	is_multiplayer = true
-	print("Joining ", address, ":", port)
-	return OK
+	# FIX: Only 1 argument (lobby_id)
+	var error = steam_peer.create_client(id)
+	
+	if error == OK:
+		multiplayer.multiplayer_peer = steam_peer
+		is_multiplayer = true
+		lobby_id = id
+		connection_succeeded.emit()
+	else:
+		connection_failed.emit()
+
+# --- IP / ENET LOGIC ---
+
+func host_ip():
+	close_connection()
+	using_steam = false
+	enet_peer = ENetMultiplayerPeer.new()
+	var error = enet_peer.create_server(DEFAULT_PORT, 2)
+	if error == OK:
+		multiplayer.multiplayer_peer = enet_peer
+		is_multiplayer = true
+		connection_succeeded.emit()
+	else:
+		connection_failed.emit()
+
+func join_ip(address: String):
+	close_connection()
+	using_steam = false
+	enet_peer = ENetMultiplayerPeer.new()
+	if address == "": address = "127.0.0.1"
+	var error = enet_peer.create_client(address, DEFAULT_PORT)
+	if error == OK:
+		multiplayer.multiplayer_peer = enet_peer
+		is_multiplayer = true
+		connection_succeeded.emit()
+	else:
+		connection_failed.emit()
+
+# --- COMMON ---
 
 func close_connection():
-	is_multiplayer = false
 	if multiplayer.multiplayer_peer != null:
+		if using_steam and lobby_id != 0: 
+			Steam.leaveLobby(lobby_id)
 		multiplayer.multiplayer_peer = null
-	if peer.get_connection_status() != MultiplayerPeer.CONNECTION_DISCONNECTED:
-		peer.close()
+	
+	steam_peer = null
+	enet_peer = null
+	is_multiplayer = false
+	lobby_id = 0
 
-func _on_player_connected(id):
-	print("Player connected: ", id)
-	player_connected.emit(id)
-	# For a 2-player game, we can auto-start when someone joins
+func _on_peer_connected(id):
 	if multiplayer.is_server():
 		start_game.rpc()
 
-func _on_player_disconnected(id):
-	print("Player disconnected: ", id)
+func _on_peer_disconnected(id):
 	player_disconnected.emit(id)
-	is_multiplayer = false
-
-func _on_connection_succeeded():
-	print("Connected to server")
-	connection_succeeded.emit()
-
-func _on_connection_failed():
-	print("Connection failed")
-	close_connection()
-	connection_failed.emit()
 
 func _on_server_disconnected():
-	print("Server disconnected")
 	close_connection()
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
+func find_steam_lobbies():
+	if not is_on_steam: return
+	Steam.addRequestLobbyListStringFilter("game", "lofi_brick_breaker", Steam.LOBBY_COMPARISON_EQUAL)
+	Steam.requestLobbyList()
+
+func _on_lobby_match_list(lobbies: Array):
+	lobby_list_received.emit(lobbies)
+
+func _on_lobby_join_requested(id: int, _friend: int):
+	join_steam_lobby(id)
+
 @rpc("authority", "call_local", "reliable")
 func start_game():
-	game_started.emit()
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+	
+func open_invite_dialog():
+	if is_on_steam and lobby_id != 0:
+		# This opens the Steam Overlay specifically to the "Invite Friends" list
+		Steam.activateGameOverlayInviteDialog(lobby_id)
+	else:
+		print("Cannot invite: Not in a Steam lobby or Steam not active.")
