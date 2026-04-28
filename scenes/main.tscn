@@ -184,36 +184,36 @@ offset_left = 12.0
 offset_top = 60.0
 offset_right = 42.0
 offset_bottom = 86.0
+theme_override_colors/font_color = Color(0.906, 0.925, 0.953, 1)
 theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 14
-theme_override_colors/font_color = Color(0.906, 0.925, 0.953, 1)
 text = "⚙"
 
 [node name="RoundSmall" type="Label" parent="HUD"]
-offset_left = 16.0
-offset_top = 116.0
-offset_right = 90.0
-offset_bottom = 126.0
+offset_left = 148.0
+offset_top = 110.0
+offset_right = 222.0
+offset_bottom = 122.0
 theme_override_colors/font_color = Color(0.357, 0.392, 0.475, 1)
 theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 9
 text = "ROUND"
 
 [node name="RoundLabel" type="Label" parent="HUD"]
-offset_left = 16.0
-offset_top = 124.0
-offset_right = 90.0
-offset_bottom = 152.0
+offset_left = 183.0
+offset_top = 96.0
+offset_right = 257.0
+offset_bottom = 124.0
 theme_override_colors/font_color = Color(0.906, 0.925, 0.953, 1)
 theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 22
 text = "01"
 
 [node name="ScoreLabel" type="Label" parent="HUD"]
-offset_left = 290.0
-offset_top = 124.0
-offset_right = 374.0
-offset_bottom = 152.0
+offset_left = 294.0
+offset_top = 86.0
+offset_right = 378.0
+offset_bottom = 114.0
 theme_override_colors/font_color = Color(0.714, 0.949, 0.29, 1)
 theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 22
@@ -221,10 +221,10 @@ text = "0000"
 horizontal_alignment = 2
 
 [node name="HighScoreLabel" type="Label" parent="HUD"]
-offset_left = 220.0
-offset_top = 116.0
-offset_right = 374.0
-offset_bottom = 126.0
+offset_left = 211.0
+offset_top = 110.0
+offset_right = 365.0
+offset_bottom = 122.0
 theme_override_colors/font_color = Color(0.357, 0.392, 0.475, 1)
 theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 9
@@ -296,11 +296,9 @@ offset_bottom = 80.0
 theme_override_colors/font_color = Color(0.906, 0.925, 0.953, 1)
 theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 12
-text = ""
 
 [node name="ExplosiveLabel" type="Label" parent="HUD/PowerupBar/ExplosiveButton"]
 layout_mode = 0
-offset_left = 0.0
 offset_top = 22.0
 offset_right = 82.0
 offset_bottom = 38.0
@@ -309,11 +307,9 @@ theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 11
 text = "BOMB"
 horizontal_alignment = 1
-mouse_filter = 2
 
 [node name="ExplosiveCooldown" type="Label" parent="HUD/PowerupBar/ExplosiveButton"]
 layout_mode = 0
-offset_left = 0.0
 offset_top = 44.0
 offset_right = 82.0
 offset_bottom = 56.0
@@ -322,7 +318,6 @@ theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 9
 text = "READY"
 horizontal_alignment = 1
-mouse_filter = 2
 
 [node name="RailgunButton" type="Button" parent="HUD/PowerupBar"]
 layout_mode = 0
@@ -332,11 +327,9 @@ offset_right = 186.0
 offset_bottom = 80.0
 theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 12
-text = ""
 
 [node name="RailgunLabel" type="Label" parent="HUD/PowerupBar/RailgunButton"]
 layout_mode = 0
-offset_left = 0.0
 offset_top = 22.0
 offset_right = 82.0
 offset_bottom = 38.0
@@ -345,11 +338,9 @@ theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 11
 text = "RAIL"
 horizontal_alignment = 1
-mouse_filter = 2
 
 [node name="RailgunCooldown" type="Label" parent="HUD/PowerupBar/RailgunButton"]
 layout_mode = 0
-offset_left = 0.0
 offset_top = 44.0
 offset_right = 82.0
 offset_bottom = 56.0
@@ -358,7 +349,6 @@ theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 9
 text = "READY"
 horizontal_alignment = 1
-mouse_filter = 2
 
 [node name="BurnButton" type="Button" parent="HUD/PowerupBar"]
 layout_mode = 0
@@ -368,11 +358,9 @@ offset_right = 276.0
 offset_bottom = 80.0
 theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 12
-text = ""
 
 [node name="BurnLabel" type="Label" parent="HUD/PowerupBar/BurnButton"]
 layout_mode = 0
-offset_left = 0.0
 offset_top = 22.0
 offset_right = 82.0
 offset_bottom = 38.0
@@ -381,11 +369,9 @@ theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 11
 text = "BURN"
 horizontal_alignment = 1
-mouse_filter = 2
 
 [node name="BurnCooldown" type="Label" parent="HUD/PowerupBar/BurnButton"]
 layout_mode = 0
-offset_left = 0.0
 offset_top = 44.0
 offset_right = 82.0
 offset_bottom = 56.0
@@ -394,7 +380,6 @@ theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 9
 text = "READY"
 horizontal_alignment = 1
-mouse_filter = 2
 
 [node name="NukeButton" type="Button" parent="HUD/PowerupBar"]
 layout_mode = 0
@@ -404,11 +389,9 @@ offset_right = 378.0
 offset_bottom = 80.0
 theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 12
-text = ""
 
 [node name="NukeLabel" type="Label" parent="HUD/PowerupBar/NukeButton"]
 layout_mode = 0
-offset_left = 0.0
 offset_top = 22.0
 offset_right = 94.0
 offset_bottom = 38.0
@@ -417,11 +400,9 @@ theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 11
 text = "NUKE"
 horizontal_alignment = 1
-mouse_filter = 2
 
 [node name="NukeStatus" type="Label" parent="HUD/PowerupBar/NukeButton"]
 layout_mode = 0
-offset_left = 0.0
 offset_top = 44.0
 offset_right = 94.0
 offset_bottom = 56.0
@@ -430,4 +411,3 @@ theme_override_fonts/font = ExtResource("3")
 theme_override_font_sizes/font_size = 9
 text = "NO CHARGES"
 horizontal_alignment = 1
-mouse_filter = 2

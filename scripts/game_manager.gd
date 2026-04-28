@@ -1790,13 +1790,13 @@ func on_brick_destroyed():
 	combo_count += 1
 	combo_timer = combo_timeout
 
-	if combo_count >= 3:
+	if combo_count >= 5:
 		# Screen flash
 		spawn_screen_flash()
 		# Combo text
 		spawn_combo_text(combo_count)
 	# Combo sound — pitches up a half-step per combo level
-	if sound_manager:
+	if combo_count >= 5 and sound_manager:
 		sound_manager.play_combo(combo_count)
 
 	# Check if board is clear
