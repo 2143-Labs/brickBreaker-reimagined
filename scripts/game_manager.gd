@@ -57,7 +57,7 @@ var settings_menu: Node = null
 @onready var nuke_name_label = $HUD/PowerupBar/NukeButton/NukeLabel
 @onready var nuke_label = $HUD/PowerupBar/NukeButton/NukeStatus
 
-var current_round: int = 100
+var current_round: int = 1
 var score: int = 0
 var pending_xp: int = 0
 var high_score: int = 0
