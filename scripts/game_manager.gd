@@ -306,9 +306,11 @@ func _ready():
 	if settings_menu and settings_menu.has_node("Panel"):
 		settings_menu.get_node("Panel").visible = false
 
-	# Start game music
+	# Start game music and sync to client
 	MusicManager.start_game_music()
-
+	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+		MusicManager.sync_current_track_to_clients()
+	
 	$HUD/GearButton.pressed.connect(func():
 		if settings_menu:
 			settings_menu.toggle_menu()
@@ -1973,7 +1975,7 @@ func _spawn_ammo_popup_rpc(count: int):
 		label.scale = Vector2(1.3, 1.3)
 		tween.tween_property(label, "scale", Vector2(1.0, 1.0), 0.3).set_ease(Tween.EASE_OUT)
 	tween.chain().tween_callback(label.queue_free)
-	
+
 func spawn_modifier_popup(text: String, color: Color):
 	if MultiplayerManager.is_multiplayer and multiplayer.is_server():
 		_spawn_modifier_popup_rpc.rpc(text, color)

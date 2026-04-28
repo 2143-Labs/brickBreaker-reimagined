@@ -48,6 +48,10 @@ func _on_track_finished():
     if is_playing_game and music_enabled:
         play_next_game_track()
 func play_next_game_track():
+    # Only the server (or singleplayer) decides the next track
+    if MultiplayerManager.is_multiplayer and not multiplayer.is_server():
+        return
+
     if shuffle_queue.size() == 0:
         reshuffle()
     if current_track_index >= shuffle_queue.size():
@@ -56,13 +60,26 @@ func play_next_game_track():
     var path = shuffle_queue[current_track_index]
     current_track_index += 1
 
+    if MultiplayerManager.is_multiplayer and multiplayer.is_server():
+        _play_specific_track_rpc.rpc(path, 0.0)
+    else:
+        _play_specific_track_rpc(path, 0.0)
+
+@rpc("authority", "call_local", "reliable")
+func _play_specific_track_rpc(path: String, playback_pos: float):
     if ResourceLoader.exists(path):
         var stream = load(path)
         if stream is AudioStreamMP3:
             stream.loop = false
         game_player.stream = stream
         game_player.volume_db = max_volume_db
-        game_player.play()
+        game_player.play(playback_pos)
+
+func sync_current_track_to_clients():
+    if is_playing_game and game_player.stream != null:
+        var path = game_player.stream.resource_path
+        var pos = game_player.get_playback_position()
+        _play_specific_track_rpc.rpc(path, pos)
 
 func start_menu_music():
     if not music_enabled:
