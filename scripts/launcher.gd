@@ -30,13 +30,6 @@ func _process(delta):
 	else:
 		railgun_charge = max(railgun_charge - delta * 4.0, 0.0)
 
-	if Engine.has_singleton("Progression") or get_node_or_null("/root/Progression"):
-		var base_c = Progression.get_equipped_color_value() if player_id == 1 else Color(0.95, 0.35, 0.4)
-		metal_dark = base_c.darkened(0.6).lerp(Color(0.35, 0.35, 0.38), 0.75)
-		metal_mid = base_c.darkened(0.4).lerp(Color(0.5, 0.5, 0.53), 0.75)
-		metal_light = base_c.darkened(0.2).lerp(Color(0.65, 0.65, 0.68), 0.75)
-		metal_highlight = base_c.lightened(0.2).lerp(Color(0.75, 0.75, 0.78), 0.75)
-
 	queue_redraw()
 
 func set_type(type: int):
@@ -90,9 +83,7 @@ func _draw_default():
 	draw_line(Vector2(-barrel_width - 1, -barrel_length), Vector2(barrel_width + 1, -barrel_length), metal_light, 2.0)
 
 	# Ball visible inside
-	var base_c = Progression.get_equipped_color_value() if (player_id == 1 and get_node_or_null("/root/Progression")) else Color(0.95, 0.35, 0.4)
-	if not get_node_or_null("/root/Progression") and player_id == 1: base_c = Color(0.3, 0.55, 0.95)
-	var col = Color(base_c.r, base_c.g, base_c.b, 0.7)
+	var col = Color(0.3, 0.55, 0.95, 0.7) if player_id == 1 else Color(0.95, 0.35, 0.4, 0.7)
 	draw_circle(Vector2(0, -8), 5, col)
 
 func _draw_bomb():
@@ -184,9 +175,7 @@ func _draw_railgun():
 			draw_circle(Vector2(0, -barrel_length), 2, Color(1.0, 0.8, 0.9, 0.5 * glow_pulse))
 
 	# Projectile visible inside
-	var base_c = Progression.get_equipped_color_value() if (player_id == 1 and get_node_or_null("/root/Progression")) else Color(0.95, 0.35, 0.5)
-	if not get_node_or_null("/root/Progression") and player_id == 1: base_c = Color(0.3, 0.85, 1.0)
-	var col = Color(base_c.r, base_c.g, base_c.b, 0.6)
+	var col = Color(0.3, 0.85, 1.0, 0.6) if player_id == 1 else Color(0.95, 0.35, 0.5, 0.6)
 	draw_circle(Vector2(0, -8), 3, col)
 
 func _draw_burn():

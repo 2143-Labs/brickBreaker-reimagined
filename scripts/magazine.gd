@@ -121,13 +121,6 @@ func shift_entrance_to(new_x: float):
 	shift_progress = 0.0
 
 func _process(delta):
-	# Update tube styling based on progression
-	if Engine.has_singleton("Progression") or get_node_or_null("/root/Progression"):
-		var p_color = Progression.get_equipped_color_value() if player_id == 1 else Color(0.95, 0.35, 0.4)
-		tube_color = p_color.darkened(0.7).lerp(Color(0.16, 0.18, 0.21), 0.7)
-		tube_inner_color = p_color.darkened(0.6).lerp(Color(0.2, 0.22, 0.26), 0.7)
-		ball_color = p_color
-
 	marker_offset -= marker_speed * delta
 	if marker_offset < 0.0:
 		marker_offset += 25.0
