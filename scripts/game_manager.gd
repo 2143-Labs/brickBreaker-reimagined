@@ -450,16 +450,18 @@ func _physics_process(delta):
 				item["orb"].position.y = lerp(float(item["from_y"]), float(item["to_y"]), t)
 
 func _process(delta):
+
+	var my_p_id = 1
+	if multiplayer.has_multiplayer_peer():
+		if MP.is_client():
+			my_p_id = 2
+
 	if not is_multiplayer_authority():
 		update_hud()
 		var total = ammo + bonus_ammo
 		for p in players.values():
 			if p.magazine.total_ammo != total:
 				p.magazine.set_ammo(total)
-
-	var my_p_id = 1
-	if MP.is_client():
-		my_p_id = 2
 		
 	var my_player = players.get(my_p_id)
 	if my_player:

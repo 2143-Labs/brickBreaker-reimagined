@@ -20,12 +20,16 @@ const DEFAULT_PORT = 7777
 # Returns true ONLY if in a multiplayer game AND you are the server.
 # Use this for triggering server-to-client RPCs.
 func is_server() -> bool:
-	return is_multiplayer and multiplayer.is_server()
+	if not multiplayer.has_multiplayer_peer(): 
+		return false
+	return multiplayer.is_server()
 
 # Returns true ONLY if in a multiplayer game AND you are a client.
 # Use this to block client logic or hide host-only UI.
 func is_client() -> bool:
-	return is_multiplayer and not multiplayer.is_server()
+	if not multiplayer.has_multiplayer_peer(): 
+		return false
+	return not multiplayer.is_server()
 
 func _ready():
 	_initialize_steam()
