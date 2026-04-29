@@ -227,6 +227,17 @@ func update_powerup_state(powerup_id: int, powered: bool):
 	launcher.set_type(powerup_id)
 	preview_ball.queue_redraw()
 
+	if ammo_label:
+		var text_color = Color(0.3, 0.55, 0.95)
+		if powerup_id == 1: text_color = Color(1.0, 0.5, 0.15)
+		elif powerup_id == 2: text_color = Color(0.2, 0.8, 1.0)
+		elif powerup_id == 3: text_color = Color(0.95, 0.5, 0.15)
+		elif is_powered: text_color = Color(0.85, 0.3, 0.25)
+		elif player_id == 2: text_color = Color(0.95, 0.35, 0.4)
+		elif get_node_or_null("/root/Progression"):
+			text_color = Progression.get_equipped_color_value()
+		ammo_label.add_theme_color_override("font_color", text_color)
+
 func _setup_preview_draw():
 	preview_ball.draw.connect(func():
 		match current_powerup:
@@ -251,7 +262,8 @@ func _setup_preview_draw():
 				elif player_id == 2:
 					preview_ball.draw_circle(Vector2.ZERO, 8, Color(0.95, 0.35, 0.4, 0.9))
 				else:
-					preview_ball.draw_circle(Vector2.ZERO, 8, Color(0.3, 0.55, 0.95, 0.9))
+					var p_col = Progression.get_equipped_color_value() if get_node_or_null("/root/Progression") else Color(0.3, 0.55, 0.95)
+					preview_ball.draw_circle(Vector2.ZERO, 8, Color(p_col.r, p_col.g, p_col.b, 0.9))
 	)
 	preview_ball.queue_redraw()
 
@@ -265,6 +277,24 @@ func _draw_aim_line(direction: Vector2):
 	launcher.set_aim(atan2(direction.y, direction.x))
 	aim_line.clear_points()
 	trajectory_preview.clear_points()
+
+	var line_color = Color(0.3, 0.55, 0.95, 0.6)
+	if current_powerup == 1:
+		line_color = Color(1.0, 0.5, 0.15, 0.6)
+	elif current_powerup == 2:
+		line_color = Color(0.2, 0.8, 1.0, 0.6)
+	elif current_powerup == 3:
+		line_color = Color(0.95, 0.5, 0.15, 0.6)
+	elif is_powered:
+		line_color = Color(0.85, 0.3, 0.25, 0.6)
+	elif player_id == 2:
+		line_color = Color(0.95, 0.35, 0.4, 0.6)
+	elif get_node_or_null("/root/Progression"):
+		var p_col = Progression.get_equipped_color_value()
+		line_color = Color(p_col.r, p_col.g, p_col.b, 0.6)
+
+	aim_line.default_color = line_color
+	trajectory_preview.default_color = line_color
 
 	var space_state = get_world_2d().direct_space_state
 	var query = PhysicsRayQueryParameters2D.create(launch_point + direction * 2, launch_point + direction * 800)

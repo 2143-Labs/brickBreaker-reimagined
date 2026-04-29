@@ -33,6 +33,7 @@ var has_save: bool = false
 var save_round: int = 1
 var save_score: int = 0
 var anim_time: float = 0.0
+var shop_panel: Panel
 
 # ----- Mode selector -----
 const MODES = [
@@ -66,13 +67,14 @@ func _ready():
 	_style_primary_button(resume_button, UITheme.CYAN)
 
 	_style_tile(stats_button, "STATS",      "lifetime",         UITheme.TEXT_MUTE, "%s" % _format_score(stats.get("high_score", 0)))
-	_style_tile(shop_button,  "SHOP",       "coming soon",      UITheme.CYAN,      "")
+	_style_tile(shop_button,  "SHOP",       "skins",            UITheme.CYAN,      "")
 	_style_tile(skill_button, "SKILL TREE", _skill_sub(),       UITheme.LIME,      "", true)
 	_style_tile(settings_btn, "SETTINGS",   "audio · fx",       UITheme.TEXT_MUTE, "")
 
 	_build_player_chip()
 	_build_dotline()
 	_apply_mode()
+	_build_shop_panel()
 
 	MusicManager.start_menu_music()
 
@@ -355,8 +357,96 @@ func _on_stats():
 	stats_panel.visible = true
 
 
+func _build_shop_panel():
+	shop_panel = Panel.new()
+	shop_panel.name = "ShopPanel"
+	shop_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shop_panel.z_index = 50 # Render above everything else
+	var sb = UITheme.make_card(UITheme.BG_BASE, UITheme.LINE, 0)
+	shop_panel.add_theme_stylebox_override("panel", sb)
+	shop_panel.visible = false
+	add_child(shop_panel)
+
+	var close_btn = Button.new()
+	close_btn.text = "CLOSE"
+	close_btn.position = Vector2(145, 600)
+	close_btn.size = Vector2(100, 40)
+	_style_primary_button(close_btn, UITheme.TEXT_MUTE)
+	close_btn.pressed.connect(func(): shop_panel.visible = false)
+	shop_panel.add_child(close_btn)
+
+	var title = Label.new()
+	title.text = "SKIN SHOP"
+	title.add_theme_font_size_override("font_size", 28)
+	title.add_theme_color_override("font_color", UITheme.CYAN)
+	title.position = Vector2(0, 80)
+	title.size = Vector2(390, 40)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	shop_panel.add_child(title)
+
+	var grid = GridContainer.new()
+	grid.name = "ShopGrid"
+	grid.columns = 2
+	grid.position = Vector2(30, 160)
+	grid.size = Vector2(330, 400)
+	grid.add_theme_constant_override("h_separation", 15)
+	grid.add_theme_constant_override("v_separation", 15)
+	shop_panel.add_child(grid)
+
+func _refresh_shop_items():
+	var grid = shop_panel.get_node("ShopGrid")
+	for c in grid.get_children():
+		c.queue_free()
+
+	var prog = get_node("/root/Progression")
+	var colors = ["blue", "red", "yellow", "green", "pink"]
+
+	for c_name in colors:
+		var btn = Button.new()
+		btn.custom_minimum_size = Vector2(155, 65)
+		var is_unlocked = c_name in prog.unlocked_colors
+		var is_equipped = c_name == prog.equipped_color
+
+		var state_text = "FREE"
+		if is_equipped:
+			state_text = "EQUIPPED"
+		elif is_unlocked:
+			state_text = "EQUIP"
+
+		var icon = ColorRect.new()
+		icon.color = prog.SKIN_COLORS[c_name]
+		icon.size = Vector2(24, 24)
+		icon.position = Vector2(12, 20)
+		btn.add_child(icon)
+
+		var lbl_name = Label.new()
+		lbl_name.text = c_name.capitalize()
+		lbl_name.position = Vector2(46, 12)
+		lbl_name.add_theme_color_override("font_color", UITheme.TEXT)
+		lbl_name.add_theme_font_size_override("font_size", 14)
+		btn.add_child(lbl_name)
+
+		var lbl_state = Label.new()
+		lbl_state.text = state_text
+		lbl_state.position = Vector2(46, 32)
+		lbl_state.add_theme_color_override("font_color", UITheme.TEXT_MUTE if not is_equipped else UITheme.LIME)
+		lbl_state.add_theme_font_size_override("font_size", 11)
+		btn.add_child(lbl_state)
+
+		_style_primary_button(btn, prog.SKIN_COLORS[c_name] if is_equipped else UITheme.TEXT_DIM)
+
+		btn.pressed.connect(func():
+			if not is_unlocked:
+				prog.unlocked_colors.append(c_name)
+			prog.equipped_color = c_name
+			prog.save_data()
+			_refresh_shop_items()
+		)
+		grid.add_child(btn)
+
 func _on_shop():
-	pass
+	_refresh_shop_items()
+	shop_panel.visible = true
 
 
 # ----- Stats panel -----
@@ -408,3 +498,5 @@ func update_stat(key: String, value: int):
 	if value > stats.get(key, 0):
 		stats[key] = value
 		save_stats()
+
+
