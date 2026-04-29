@@ -10,6 +10,9 @@ const BOSS_BRICK_SCENE = preload("res://scenes/boss_brick.tscn")
 const GUARDIAN_BRICK_SCENE = preload("res://scenes/guardian_brick.tscn")
 const RAINBOW_BRICK_SCENE = preload("res://scenes/rainbow_brick.tscn")
 const ARMORED_BRICK_SCENE = preload("res://scenes/armored_brick.tscn")
+const TRIANGLE_BRICK_SCENE = preload("res://scenes/triangle_brick.tscn")
+const DIAGONAL_BRICK_SCENE = preload("res://scenes/diagonal_brick.tscn")
+const BOARD_CLEAR_SHADER = preload("res://assets/shaders/board_clear.gdshader")
 const OIL_BARREL_SCENE = preload("res://scenes/oil_barrel.tscn")
 const PICKUP_SCENE = preload("res://scenes/pickup.tscn")
 const SAVE_PATH = "user://highscore.save"
@@ -42,13 +45,17 @@ var settings_menu: Node = null
 
 # Powerup UI
 @onready var explosive_button = $HUD/PowerupBar/ExplosiveButton
-@onready var explosive_cooldown_label = $HUD/PowerupBar/ExplosiveCooldown
+@onready var explosive_name_label = $HUD/PowerupBar/ExplosiveButton/ExplosiveLabel
+@onready var explosive_cooldown_label = $HUD/PowerupBar/ExplosiveButton/ExplosiveCooldown
 @onready var railgun_button = $HUD/PowerupBar/RailgunButton
-@onready var railgun_cooldown_label = $HUD/PowerupBar/RailgunCooldown
+@onready var railgun_name_label = $HUD/PowerupBar/RailgunButton/RailgunLabel
+@onready var railgun_cooldown_label = $HUD/PowerupBar/RailgunButton/RailgunCooldown
 @onready var burn_button = $HUD/PowerupBar/BurnButton
-@onready var burn_cooldown_label = $HUD/PowerupBar/BurnCooldown
+@onready var burn_name_label = $HUD/PowerupBar/BurnButton/BurnLabel
+@onready var burn_cooldown_label = $HUD/PowerupBar/BurnButton/BurnCooldown
 @onready var nuke_button = $HUD/PowerupBar/NukeButton
-@onready var nuke_label = $HUD/PowerupBar/NukeLabel
+@onready var nuke_name_label = $HUD/PowerupBar/NukeButton/NukeLabel
+@onready var nuke_label = $HUD/PowerupBar/NukeButton/NukeStatus
 
 var current_round: int = 1
 var score: int = 0
@@ -58,6 +65,7 @@ var ammo: int = 1
 var bonus_ammo: int = 0
 var pending_ammo: int = 0
 var is_aiming: bool = false
+var last_aim_pos: Vector2 = Vector2.ZERO
 var is_firing: bool = false
 var railgun_deaths_pending: int = 0
 var railgun_total_kills: int = 0
@@ -118,7 +126,7 @@ var railgun_cooldown: int = 0
 var railgun_cooldown_max: int = 0  # disabled for testing — railgun has no cooldown
 var burn_cooldown: int = 0
 var burn_cooldown_max: int = 5
-var nuke_charges: int = 0
+var nuke_charges: int = 2
 var burn_round_active: bool = false
 
 # Boss system
@@ -135,6 +143,14 @@ var bosses_killed: Array = []
 var active_elites: int = 0
 var max_elites: int = 2
 var elite_chance: float = 0.12
+# Pre-reservation: when an elite roll wins but no clear footprint, defer it
+# and hold a strip of top-row columns clear so space opens up over a few rounds.
+var pending_elite_info: Variant = null
+var reserved_top_cols: Array = []
+var pending_elite_rounds_waited: int = 0
+const MAX_PENDING_ELITE_ROUNDS: int = 8
+
+var board_clear_played: bool = false
 
 # Rainbow brick
 var rainbow_on_board: bool = false
@@ -184,6 +200,9 @@ func _ready():
 		orb.set_meta("slide_to", orb.position.y + cell_height)
 		orb.set_meta("first_round", true)
 
+	# Apply lofi card stylebox to the HUD level card and gear/speed buttons
+	_apply_hud_styling()
+
 	update_hud()
 	update_ammo_label_position()
 	update_all_powerup_ui()
@@ -221,19 +240,35 @@ func _ready():
 			print("No settings menu!")
 	)
 func _draw():
-	var border_color = Color(0.22, 0.24, 0.28, 0.5)
-	var corner_radius = 6.0
+	var border_color = UITheme.LINE_2
+	var corner_radius = 8.0
 
 	# Draw rounded arena border
 	var rect = Rect2(arena_left, arena_top, arena_right - arena_left, arena_bottom - arena_top)
-	# Border
-	draw_rounded_rect_outline(rect, border_color, corner_radius, 1.5)
+	draw_rounded_rect_outline(rect, border_color, corner_radius, 1.0)
+
+	# Tiny corner brackets like the design
+	var L = 10.0
+	var bracket = UITheme.LINE_2
+	# top-left
+	draw_line(Vector2(arena_left + 6, arena_top + 6), Vector2(arena_left + 6 + L, arena_top + 6), bracket, 1.0)
+	draw_line(Vector2(arena_left + 6, arena_top + 6), Vector2(arena_left + 6, arena_top + 6 + L), bracket, 1.0)
+	# top-right
+	draw_line(Vector2(arena_right - 6, arena_top + 6), Vector2(arena_right - 6 - L, arena_top + 6), bracket, 1.0)
+	draw_line(Vector2(arena_right - 6, arena_top + 6), Vector2(arena_right - 6, arena_top + 6 + L), bracket, 1.0)
+	# bottom-left
+	draw_line(Vector2(arena_left + 6, arena_bottom - 6), Vector2(arena_left + 6 + L, arena_bottom - 6), bracket, 1.0)
+	draw_line(Vector2(arena_left + 6, arena_bottom - 6), Vector2(arena_left + 6, arena_bottom - 6 - L), bracket, 1.0)
+	# bottom-right
+	draw_line(Vector2(arena_right - 6, arena_bottom - 6), Vector2(arena_right - 6 - L, arena_bottom - 6), bracket, 1.0)
+	draw_line(Vector2(arena_right - 6, arena_bottom - 6), Vector2(arena_right - 6, arena_bottom - 6 - L), bracket, 1.0)
+
 	# Grid lines
 	var should_draw_grid = true
 	if settings_menu != null:
 		should_draw_grid = settings_menu.grid_enabled
 	if should_draw_grid:
-		var grid_color = Color(0.16, 0.18, 0.21, 0.2)
+		var grid_color = Color(1, 1, 1, 0.05)
 		for i in range(1, grid_cols):
 			var x = arena_left + i * cell_width
 			draw_line(Vector2(x, arena_top), Vector2(x, arena_bottom), grid_color, 1.0)
@@ -376,39 +411,129 @@ func tick_cooldowns():
 	if railgun_cooldown > 0: railgun_cooldown -= 1
 	if burn_cooldown > 0: burn_cooldown -= 1
 
-func update_powerup_button(button: Button, label: Label, cd: int, is_active: bool, cd_max: int):
-	if cd > 0:
-		button.disabled = true
-		button.modulate = Color(0.5, 0.5, 0.5)
-		label.text = "%d rounds" % cd
-		label.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
-	elif is_active:
-		button.disabled = false
-		button.modulate = Color(1.0, 0.7, 0.3)
-		label.text = "ARMED"
-		label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.15))
+func _apply_hud_styling():
+	# Card backing for the level row
+	var lc = $HUD.get_node_or_null("LevelCard")
+	if lc:
+		var sb = UITheme.make_card(UITheme.BG_CARD, UITheme.LINE, UITheme.R_MD)
+		sb.set_content_margin_all(8)
+		lc.add_theme_stylebox_override("panel", sb)
+
+	# Compact icon-style buttons in the top bar
+	_style_icon_button(speed_button, UITheme.CYAN)
+	_style_icon_button($HUD/GearButton, UITheme.TEXT)
+
+func _style_icon_button(btn: Button, accent: Color):
+	if not btn: return
+	var sb_n = UITheme.make_card(UITheme.BG_CARD, UITheme.LINE_2, UITheme.R_SM)
+	sb_n.set_content_margin_all(4)
+	var sb_h = sb_n.duplicate()
+	sb_h.bg_color = UITheme.BG_CARDHI
+	sb_h.border_color = accent
+	var sb_p = sb_h.duplicate()
+	sb_p.bg_color = Color(accent.r, accent.g, accent.b, 0.10)
+	btn.add_theme_stylebox_override("normal",  sb_n)
+	btn.add_theme_stylebox_override("hover",   sb_h)
+	btn.add_theme_stylebox_override("pressed", sb_p)
+
+# Apply card stylebox + top-edge accent ribbon to a powerup button.
+# state: "ready" (accent), "armed" (lime+amber tint), "off" (rose), "cd" (rose dim)
+func _style_powerup_card(btn: Button, accent: Color, state: String) -> void:
+	if not btn: return
+	var border_col := UITheme.LINE
+	var bg_col := UITheme.BG_CARD
+	if state == "armed":
+		border_col = accent
+		bg_col = Color(accent.r, accent.g, accent.b, 0.10)
+	elif state == "ready":
+		border_col = Color(accent.r, accent.g, accent.b, 0.45)
+	elif state == "cd":
+		bg_col = UITheme.BG_CARD.darkened(0.15)
+	elif state == "off":
+		border_col = UITheme.LINE
+		bg_col = UITheme.BG_CARD.darkened(0.20)
+
+	var sb := UITheme.make_card(bg_col, border_col, UITheme.R_MD)
+	sb.set_content_margin_all(6)
+	# Accent ribbon on top
+	if state == "ready" or state == "armed":
+		sb.border_width_top = 2
+	elif state == "off" or state == "cd":
+		sb.border_width_top = 2
+	btn.add_theme_stylebox_override("normal",  sb)
+	btn.add_theme_stylebox_override("hover",   sb)
+	btn.add_theme_stylebox_override("pressed", sb)
+	btn.add_theme_stylebox_override("disabled", sb)
+	# When disabled the ribbon becomes rose-dim; visualize via modulate
+	btn.modulate = Color(1, 1, 1, 0.45) if state == "off" or state == "cd" else Color(1, 1, 1)
+
+func _set_powerup_status(name_lbl: Label, status_lbl: Label, accent: Color, state: String, status_text: String) -> void:
+	if not name_lbl or not status_lbl: return
+	name_lbl.add_theme_color_override("font_color", UITheme.TEXT if state != "off" else UITheme.TEXT_DIM)
+	status_lbl.text = status_text
+	if state == "armed":
+		status_lbl.add_theme_color_override("font_color", UITheme.AMBER)
+	elif state == "ready":
+		status_lbl.add_theme_color_override("font_color", accent)
 	else:
-		button.disabled = false
-		button.modulate = Color(1, 1, 1)
-		label.text = "Ready"
-		label.add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
+		status_lbl.add_theme_color_override("font_color", UITheme.ROSE)
+
+func update_powerup_button(button: Button, label: Label, cd: int, is_active: bool, cd_max: int):
+	# Legacy signature kept for compatibility; routed through the new card styling.
+	pass
 
 func update_all_powerup_ui():
-	update_powerup_button(explosive_button, explosive_cooldown_label, explosive_cooldown, active_powerup == ActivePowerup.EXPLOSIVE, explosive_cooldown_max)
-	update_powerup_button(railgun_button, railgun_cooldown_label, railgun_cooldown, active_powerup == ActivePowerup.RAILGUN, railgun_cooldown_max)
-	update_powerup_button(burn_button, burn_cooldown_label, burn_cooldown, active_powerup == ActivePowerup.BURN, burn_cooldown_max)
-	# Nuke
-	nuke_button.text = "NUKE (%d)" % nuke_charges
-	if nuke_charges > 0:
-		nuke_button.disabled = false
-		nuke_button.modulate = Color(1, 1, 1)
-		nuke_label.text = "%d charges" % nuke_charges
-		nuke_label.add_theme_color_override("font_color", Color(0.9, 0.8, 0.2))
+	# Explosive (lime)
+	if explosive_cooldown > 0:
+		_style_powerup_card(explosive_button, UITheme.LIME, "cd")
+		_set_powerup_status(explosive_name_label, explosive_cooldown_label, UITheme.LIME, "cd", "%d ROUNDS" % explosive_cooldown)
+		explosive_button.disabled = true
+	elif active_powerup == ActivePowerup.EXPLOSIVE:
+		_style_powerup_card(explosive_button, UITheme.LIME, "armed")
+		_set_powerup_status(explosive_name_label, explosive_cooldown_label, UITheme.LIME, "armed", "ARMED")
+		explosive_button.disabled = false
 	else:
+		_style_powerup_card(explosive_button, UITheme.LIME, "ready")
+		_set_powerup_status(explosive_name_label, explosive_cooldown_label, UITheme.LIME, "ready", "READY")
+		explosive_button.disabled = false
+
+	# Railgun (cyan)
+	if railgun_cooldown > 0:
+		_style_powerup_card(railgun_button, UITheme.CYAN, "cd")
+		_set_powerup_status(railgun_name_label, railgun_cooldown_label, UITheme.CYAN, "cd", "%d ROUNDS" % railgun_cooldown)
+		railgun_button.disabled = true
+	elif active_powerup == ActivePowerup.RAILGUN:
+		_style_powerup_card(railgun_button, UITheme.CYAN, "armed")
+		_set_powerup_status(railgun_name_label, railgun_cooldown_label, UITheme.CYAN, "armed", "ARMED")
+		railgun_button.disabled = false
+	else:
+		_style_powerup_card(railgun_button, UITheme.CYAN, "ready")
+		_set_powerup_status(railgun_name_label, railgun_cooldown_label, UITheme.CYAN, "ready", "READY")
+		railgun_button.disabled = false
+
+	# Burn (amber)
+	if burn_cooldown > 0:
+		_style_powerup_card(burn_button, UITheme.AMBER, "cd")
+		_set_powerup_status(burn_name_label, burn_cooldown_label, UITheme.AMBER, "cd", "%d ROUNDS" % burn_cooldown)
+		burn_button.disabled = true
+	elif active_powerup == ActivePowerup.BURN:
+		_style_powerup_card(burn_button, UITheme.AMBER, "armed")
+		_set_powerup_status(burn_name_label, burn_cooldown_label, UITheme.AMBER, "armed", "ARMED")
+		burn_button.disabled = false
+	else:
+		_style_powerup_card(burn_button, UITheme.AMBER, "ready")
+		_set_powerup_status(burn_name_label, burn_cooldown_label, UITheme.AMBER, "ready", "READY")
+		burn_button.disabled = false
+
+	# Nuke (rose) — charges-based
+	if nuke_charges > 0:
+		_style_powerup_card(nuke_button, UITheme.ROSE, "ready")
+		_set_powerup_status(nuke_name_label, nuke_label, UITheme.ROSE, "ready", "× %d READY" % nuke_charges)
+		nuke_button.disabled = false
+	else:
+		_style_powerup_card(nuke_button, UITheme.ROSE, "off")
+		_set_powerup_status(nuke_name_label, nuke_label, UITheme.ROSE, "off", "NO CHARGES")
 		nuke_button.disabled = true
-		nuke_button.modulate = Color(0.5, 0.5, 0.5)
-		nuke_label.text = "No charges"
-		nuke_label.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
 
 func update_launcher_type():
 		match active_powerup:
@@ -507,6 +632,7 @@ func _input(event):
 	if event is InputEventMouseMotion or event is InputEventScreenDrag:
 		if is_aiming:
 			var aim_pos = event.position if event is InputEventMouseMotion else event.position
+			last_aim_pos = aim_pos
 			update_aim_line(aim_pos)
 
 func update_aim_line(target: Vector2):
@@ -916,6 +1042,7 @@ func on_railgun_death_finished():
 
 func end_round():
 	is_firing = false
+	board_clear_played = false
 	current_round += 1
 	launch_point.x = next_launch_x
 
@@ -1009,6 +1136,7 @@ func spawn_guardians_if_needed():
 					brick_container.add_child(g)
 
 func spawn_round_content():
+	try_spawn_pending_elite()
 	try_spawn_boss()
 	try_spawn_elite()
 	spawn_round_bricks_at_row0()
@@ -1033,6 +1161,46 @@ func try_spawn_special_bricks():
 			brick.health = current_round
 			brick.max_health = current_round
 			brick_container.add_child(brick)
+			occupied.append(Vector2(col, 0))
+
+	# Rotating triangle brick — chaotic spinning hazard, max one on board
+	var has_triangle = false
+	var has_diagonal = false
+	for b in brick_container.get_children():
+		if b.is_in_group("triangle_bricks"):
+			has_triangle = true
+		if b.is_in_group("diagonal_bricks"):
+			has_diagonal = true
+	if not has_triangle and randf() < 0.5:
+		var available = []
+		for c in range(grid_cols):
+			if Vector2(c, 0) not in occupied and c not in reserved_top_cols:
+				available.append(c)
+		if available.size() > 0:
+			var col = available[randi() % available.size()]
+			var tri = TRIANGLE_BRICK_SCENE.instantiate()
+			tri.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
+			tri.health = current_round
+			tri.max_health = current_round
+			tri.rotation = randf() * TAU
+			tri.spin_speed = randf_range(1.0, 2.0) * (1.0 if randf() > 0.5 else -1.0)
+			brick_container.add_child(tri)
+			occupied.append(Vector2(col, 0))
+
+	# Diagonal-cut brick — grid-aligned right triangle, slightly more common
+	if not has_diagonal and randf() < 0.6:
+		var available = []
+		for c in range(grid_cols):
+			if Vector2(c, 0) not in occupied and c not in reserved_top_cols:
+				available.append(c)
+		if available.size() > 0:
+			var col = available[randi() % available.size()]
+			var d = DIAGONAL_BRICK_SCENE.instantiate()
+			d.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
+			d.health = current_round
+			d.max_health = current_round
+			d.orientation = randi() % 4
+			brick_container.add_child(d)
 			occupied.append(Vector2(col, 0))
 
 	# Oil barrel: 8% chance after round 10
@@ -1070,6 +1238,8 @@ func get_boss_info(round_num: int) -> Variant:
 func try_spawn_elite():
 	if current_round < 75 or active_elites >= max_elites:
 		return
+	if pending_elite_info != null:
+		return  # already have one waiting for space
 	var eligible = []
 	for boss_round in boss_schedule.keys():
 		if boss_round <= current_round - 50 and boss_round in bosses_killed:
@@ -1081,8 +1251,79 @@ func try_spawn_elite():
 		var info = boss_schedule[template_round].duplicate()
 		info["is_elite"] = true
 		info["hp_mult"] = 1
-		spawn_boss(info)
+		var col = find_clear_boss_footprint(info["w"], info["h"])
+		if col >= 0:
+			spawn_boss_at(info, col)
+			active_elites += 1
+		else:
+			# Defer — pre-reserve a top-row strip so space opens up
+			defer_elite(info)
+
+func defer_elite(info: Dictionary):
+	pending_elite_info = info
+	pending_elite_rounds_waited = 0
+	reserved_top_cols = pick_reservation_strip(info["w"])
+
+func try_spawn_pending_elite():
+	if pending_elite_info == null:
+		return
+	var info = pending_elite_info
+	var col = find_clear_boss_footprint(info["w"], info["h"])
+	if col >= 0:
+		spawn_boss_at(info, col)
 		active_elites += 1
+		pending_elite_info = null
+		reserved_top_cols = []
+		pending_elite_rounds_waited = 0
+		return
+	pending_elite_rounds_waited += 1
+	if pending_elite_rounds_waited >= MAX_PENDING_ELITE_ROUNDS:
+		pending_elite_info = null
+		reserved_top_cols = []
+		pending_elite_rounds_waited = 0
+	else:
+		# Refresh reservation in case existing strip was overrun by destruction shifts
+		reserved_top_cols = pick_reservation_strip(info["w"])
+
+func find_clear_boss_footprint(w: int, h: int) -> int:
+	var occupied = get_occupied_cells()
+	var candidates = []
+	var max_col = grid_cols - w
+	for col in range(max_col + 1):
+		var clear = true
+		for dx in range(w):
+			for dy in range(h):
+				if Vector2(col + dx, dy) in occupied:
+					clear = false
+					break
+			if not clear:
+				break
+		if clear:
+			candidates.append(col)
+	if candidates.is_empty():
+		return -1
+	return candidates[randi() % candidates.size()]
+
+func pick_reservation_strip(w: int) -> Array:
+	# Choose a contiguous w-cell strip in row 0 that isn't currently occupied.
+	var occupied = get_occupied_cells()
+	var candidates = []
+	var max_col = grid_cols - w
+	for col in range(max_col + 1):
+		var ok = true
+		for dx in range(w):
+			if Vector2(col + dx, 0) in occupied:
+				ok = false
+				break
+		if ok:
+			candidates.append(col)
+	if candidates.is_empty():
+		return []
+	var start = candidates[randi() % candidates.size()]
+	var strip = []
+	for dx in range(w):
+		strip.append(start + dx)
+	return strip
 
 func try_spawn_rainbow():
 	if rainbow_on_board:
@@ -1093,7 +1334,7 @@ func try_spawn_rainbow():
 		var occupied = get_occupied_cells()
 		var available = []
 		for c in range(grid_cols):
-			if Vector2(c, 0) not in occupied:
+			if Vector2(c, 0) not in occupied and c not in reserved_top_cols:
 				available.append(c)
 		if available.size() > 0:
 			var col = available[randi() % available.size()]
@@ -1103,6 +1344,10 @@ func try_spawn_rainbow():
 			rainbow_on_board = true
 
 func spawn_boss(info: Dictionary):
+	var max_col = grid_cols - info["w"]
+	spawn_boss_at(info, randi_range(0, max(0, max_col)))
+
+func spawn_boss_at(info: Dictionary, col: int):
 	var boss = BOSS_BRICK_SCENE.instantiate()
 	boss.grid_width = info["w"]
 	boss.grid_height = info["h"]
@@ -1127,8 +1372,6 @@ func spawn_boss(info: Dictionary):
 		boss.has_shield = true
 		boss.shield_hp = info["shield"]
 		boss.shield_max = info["shield"]
-	var max_col = grid_cols - info["w"]
-	var col = randi_range(0, max(0, max_col))
 	var x = grid_start_x + col * cell_width + (info["w"] - 1) * cell_width / 2.0
 	var y = grid_start_y + (info["h"] - 1) * cell_height / 2.0
 	boss.position = Vector2(x, y)
@@ -1267,7 +1510,7 @@ func spawn_round_bricks_at_row0() -> Array:
 	var attempts = 0
 	while columns.size() < brick_count and attempts < 20:
 		var col = randi_range(0, grid_cols - 1)
-		if col not in columns and Vector2(col, 0) not in occupied:
+		if col not in columns and Vector2(col, 0) not in occupied and col not in reserved_top_cols:
 			columns.append(col)
 		attempts += 1
 	for col in columns:
@@ -1286,7 +1529,7 @@ func spawn_ammo_orbs_at_row0() -> Array:
 	var occupied = get_occupied_cells()
 	var available = []
 	for c in range(grid_cols):
-		if Vector2(c, 0) not in occupied:
+		if Vector2(c, 0) not in occupied and c not in reserved_top_cols:
 			available.append(c)
 	if available.size() > 0:
 		var col = available[randi() % available.size()]
@@ -1412,19 +1655,15 @@ func add_score(points: int):
 	update_xp_preview()
 
 func update_score_display():
-	score_label.text = str(score)
+	score_label.text = "%04d" % score if score < 10000 else str(score)
 	if score >= 1000:
-		score_label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
+		score_label.add_theme_color_override("font_color", UITheme.ROSE)
 	elif score >= 500:
-		score_label.add_theme_color_override("font_color", Color(1.0, 0.6, 0.2))
-	elif score >= 200:
-		score_label.add_theme_color_override("font_color", Color(0.95, 0.85, 0.2))
+		score_label.add_theme_color_override("font_color", UITheme.AMBER)
 	elif score >= 100:
-		score_label.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4))
-	elif score >= 50:
-		score_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.35))
+		score_label.add_theme_color_override("font_color", UITheme.CYAN)
 	else:
-		score_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+		score_label.add_theme_color_override("font_color", UITheme.LIME)
 
 func update_xp_preview():
 	if not xp_preview_fill or not xp_bar_fill:
@@ -1440,23 +1679,23 @@ func update_xp_preview():
 	xp_preview_fill.visible = pending_xp > 0
 
 func update_hud():
-	ammo_label.text = "x%d" % (ammo + bonus_ammo)
-	round_label.text = "%d" % current_round
-	high_score_label.text = "BEST %d" % high_score
+	ammo_label.text = "× %d" % (ammo + bonus_ammo)
+	round_label.text = "%02d" % current_round
+	high_score_label.text = "SCORE · BEST %d" % high_score
 	update_score_display()
 	# XP display
 	if xp_bar_fill and xp_text and level_label and sp_label:
 		var progress = Progression.xp_progress()
 		xp_bar_fill.offset_right = 60.0 + progress * 240.0
 		xp_text.text = "%d / %d XP" % [Progression.xp, Progression.xp_for_current_level()]
-		level_label.text = "LV %d" % Progression.level
+		level_label.text = "%d" % Progression.level
 		# Update SP prefix and numeric label separately
 		if $HUD.has_node("SPPrefix"):
-			$HUD.get_node("SPPrefix").add_theme_color_override("font_color", Color(0.5, 0.5, 0.55, 1))
+			$HUD.get_node("SPPrefix").add_theme_color_override("font_color", UITheme.TEXT_MUTE)
 		if Progression.skill_points > 0:
-			$HUD.get_node("SPLabel").add_theme_color_override("font_color", Color(0.741, 1.0, 0.024, 1))
+			$HUD.get_node("SPLabel").add_theme_color_override("font_color", UITheme.LIME)
 		else:
-			$HUD.get_node("SPLabel").add_theme_color_override("font_color", Color(0.5, 0.5, 0.55, 1))
+			$HUD.get_node("SPLabel").add_theme_color_override("font_color", UITheme.TEXT_MUTE)
 		$HUD.get_node("SPLabel").text = "%d" % Progression.skill_points
 
 func collect_ammo_orb():
@@ -1523,6 +1762,10 @@ var combo_bar: Node2D = null
 var combo_slow_timer: float = 0.0
 
 func _process(delta):
+	# Re-run trajectory each frame while aiming so it tracks moving/rotating bricks
+	if is_aiming and not is_firing and game_active and not is_sliding and not is_dropping:
+		update_aim_line(last_aim_pos)
+
 	# Combo timer decay (supports temporary slow-down when bricks are hit)
 	if combo_timer > 0:
 		var slow_ratio = clamp(combo_slow_timer / 0.1, 0.0, 1.0)
@@ -1547,17 +1790,112 @@ func on_brick_destroyed():
 	combo_count += 1
 	combo_timer = combo_timeout
 
-	if combo_count >= 3:
+	if combo_count >= 5:
 		# Screen flash
 		spawn_screen_flash()
 		# Combo text
 		spawn_combo_text(combo_count)
-		# Play escalating combo audio for larger combos
+	# Combo sound — pitches up a half-step per combo level
 	if combo_count >= 5 and sound_manager:
 		sound_manager.play_combo(combo_count)
 
 	# Check if board is clear
-	call_deferred("check_early_round_end")
+	call_deferred("_check_board_clear_visual")
+
+func _is_board_clear() -> bool:
+	for b in brick_container.get_children():
+		if not is_instance_valid(b):
+			continue
+		if "is_dying" in b and b.is_dying:
+			continue
+		return false
+	for o in orb_container.get_children():
+		if not is_instance_valid(o):
+			continue
+		if "is_dying" in o and o.is_dying:
+			continue
+		return false
+	return true
+
+func _check_board_clear_visual():
+	if board_clear_played or not is_firing:
+		return
+	if not _is_board_clear():
+		return
+	board_clear_played = true
+	play_board_clear()
+	# Kill all balls so the round ends without waiting for them to drift back
+	for ball in ball_container.get_children():
+		if is_instance_valid(ball):
+			ball.queue_free()
+	# Brief delay so the player sees the celebration before the next round
+	var t = create_tween()
+	t.tween_interval(0.55)
+	t.tween_callback(func():
+		if is_firing:
+			end_round()
+	)
+
+func play_board_clear():
+	var rect = ColorRect.new()
+	var mat = ShaderMaterial.new()
+	mat.shader = BOARD_CLEAR_SHADER
+	mat.set_shader_parameter("progress", 0.0)
+	mat.set_shader_parameter("center", Vector2(0.5, 0.5))
+	rect.material = mat
+	rect.color = Color(1, 1, 1, 1)
+	rect.anchor_right = 1.0
+	rect.anchor_bottom = 1.0
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rect.z_index = 100
+	$HUD.add_child(rect)
+	await get_tree().process_frame
+	var sz = rect.size
+	if sz.x > 0 and sz.y > 0:
+		mat.set_shader_parameter("aspect", sz.x / sz.y)
+
+	add_shake(6.0)
+	if sound_manager:
+		sound_manager.play_combo(8)
+
+	var tween = create_tween()
+	tween.tween_method(func(p: float):
+		if is_instance_valid(rect):
+			mat.set_shader_parameter("progress", p)
+	, 0.0, 1.0, 1.1)
+	tween.tween_callback(rect.queue_free)
+
+	# Big celebratory text
+	var label = Label.new()
+	label.text = "BOARD CLEAR!"
+	label.add_theme_font_size_override("font_size", 32)
+	label.add_theme_color_override("font_color", Color(1, 1, 1))
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	label.add_theme_constant_override("outline_size", 6)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	label.clip_text = false
+	label.anchor_left = 0.0
+	label.anchor_right = 1.0
+	label.anchor_top = 0.4
+	label.anchor_bottom = 0.4
+	label.offset_left = 0
+	label.offset_right = 0
+	label.offset_top = -30
+	label.offset_bottom = 30
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.z_index = 101
+	label.modulate.a = 0.0
+	$HUD.add_child(label)
+	# Pivot at center so the scale tween doesn't push it off-screen
+	label.pivot_offset = label.size * 0.5
+	var ltween = create_tween()
+	ltween.set_parallel(true)
+	ltween.tween_property(label, "modulate:a", 1.0, 0.15)
+	ltween.tween_property(label, "scale", Vector2(1.3, 1.3), 0.7).from(Vector2(0.6, 0.6)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	ltween.chain().tween_property(label, "modulate:a", 0.0, 0.4)
+	ltween.chain().tween_callback(label.queue_free)
 
 
 func check_early_round_end():

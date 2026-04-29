@@ -15,67 +15,142 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-color = Color(0.1, 0.1, 0.13, 1)
+color = Color(0.075, 0.09, 0.125, 1)
 
-[node name="Title" type="Label" parent="."]
-offset_left = 20.0
-offset_top = 20.0
-offset_right = 370.0
-offset_bottom = 55.0
-text = "SKILL TREE"
-horizontal_alignment = 1
-theme_override_fonts/font = ExtResource("2")
-theme_override_font_sizes/font_size = 24
-theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-[node name="LevelLabel" type="Label" parent="."]
-offset_left = 20.0
+[node name="BackButton" type="Button" parent="."]
+offset_left = 16.0
 offset_top = 60.0
-offset_right = 200.0
-offset_bottom = 85.0
-text = "Level 1"
+offset_right = 96.0
+offset_bottom = 86.0
+text = "‹ BACK"
 theme_override_fonts/font = ExtResource("2")
-theme_override_font_sizes/font_size = 16
-theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
+theme_override_font_sizes/font_size = 11
 
-[node name="SPLabel" type="Label" parent="."]
-offset_left = 200.0
-offset_top = 60.0
-offset_right = 375.0
-offset_bottom = 85.0
-text = "Skill Points: 0"
-horizontal_alignment = 2
-theme_override_fonts/font = ExtResource("2")
-theme_override_font_sizes/font_size = 14
-theme_override_colors/font_color = Color(0.4, 0.8, 0.4, 1)
-
-[node name="XPBar" type="ProgressBar" parent="."]
-offset_left = 20.0
-offset_top = 92.0
-offset_right = 370.0
-offset_bottom = 105.0
-value = 0.0
-
-[node name="XPLabel" type="Label" parent="."]
-offset_left = 20.0
-offset_top = 108.0
-offset_right = 370.0
-offset_bottom = 125.0
-text = "0 / 100 XP"
+[node name="Eyebrow" type="Label" parent="."]
+offset_left = 100.0
+offset_top = 64.0
+offset_right = 290.0
+offset_bottom = 80.0
+text = "◇ SKILLS"
 horizontal_alignment = 1
 theme_override_fonts/font = ExtResource("2")
 theme_override_font_sizes/font_size = 10
-theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
+theme_override_colors/font_color = Color(0.357, 0.392, 0.475, 1)
 
-[node name="TalentContainer" type="Control" parent="."]
-offset_left = 10.0
-offset_top = 135.0
-offset_right = 380.0
-offset_bottom = 750.0
-[node name="BackButton" type="Button" parent="."]
-offset_left = 130.0
-offset_top = 780.0
-offset_right = 260.0
-offset_bottom = 820.0
-text = "BACK"
+[node name="ResetButton" type="Button" parent="."]
+offset_left = 294.0
+offset_top = 60.0
+offset_right = 374.0
+offset_bottom = 86.0
+text = "RESET"
 theme_override_fonts/font = ExtResource("2")
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 11
+
+[node name="Title" type="Label" parent="."]
+offset_left = 16.0
+offset_top = 100.0
+offset_right = 374.0
+offset_bottom = 138.0
+text = "SKILL TREE"
+horizontal_alignment = 1
+theme_override_fonts/font = ExtResource("2")
+theme_override_font_sizes/font_size = 26
+theme_override_colors/font_color = Color(0.906, 0.925, 0.953, 1)
+
+[node name="HeaderCard" type="Panel" parent="."]
+offset_left = 16.0
+offset_top = 152.0
+offset_right = 374.0
+offset_bottom = 248.0
+
+[node name="LevelPrefix" type="Label" parent="HeaderCard"]
+offset_left = 14.0
+offset_top = 12.0
+offset_right = 70.0
+offset_bottom = 28.0
+text = "LEVEL"
+theme_override_fonts/font = ExtResource("2")
+theme_override_font_sizes/font_size = 9
+theme_override_colors/font_color = Color(0.541, 0.576, 0.651, 1)
+
+[node name="LevelLabel" type="Label" parent="HeaderCard"]
+offset_left = 60.0
+offset_top = 6.0
+offset_right = 160.0
+offset_bottom = 30.0
+text = "1"
+theme_override_fonts/font = ExtResource("2")
+theme_override_font_sizes/font_size = 22
+theme_override_colors/font_color = Color(0.714, 0.949, 0.29, 1)
+
+[node name="SPPrefix" type="Label" parent="HeaderCard"]
+offset_left = 200.0
+offset_top = 12.0
+offset_right = 296.0
+offset_bottom = 28.0
+text = "SKILL POINTS"
+horizontal_alignment = 2
+theme_override_fonts/font = ExtResource("2")
+theme_override_font_sizes/font_size = 9
+theme_override_colors/font_color = Color(0.541, 0.576, 0.651, 1)
+
+[node name="SPLabel" type="Label" parent="HeaderCard"]
+offset_left = 300.0
+offset_top = 6.0
+offset_right = 344.0
+offset_bottom = 30.0
+text = "0"
+horizontal_alignment = 2
+theme_override_fonts/font = ExtResource("2")
+theme_override_font_sizes/font_size = 22
+theme_override_colors/font_color = Color(0.714, 0.949, 0.29, 1)
+
+[node name="XPBar" type="ProgressBar" parent="HeaderCard"]
+offset_left = 14.0
+offset_top = 44.0
+offset_right = 344.0
+offset_bottom = 56.0
+show_percentage = false
+value = 0.0
+
+[node name="XPLabel" type="Label" parent="HeaderCard"]
+offset_left = 14.0
+offset_top = 62.0
+offset_right = 344.0
+offset_bottom = 78.0
+text = "0 / 100 XP"
+theme_override_fonts/font = ExtResource("2")
+theme_override_font_sizes/font_size = 9
+theme_override_colors/font_color = Color(0.541, 0.576, 0.651, 1)
+
+[node name="XPPercent" type="Label" parent="HeaderCard"]
+offset_left = 14.0
+offset_top = 62.0
+offset_right = 344.0
+offset_bottom = 78.0
+text = "0% · LV 2"
+horizontal_alignment = 2
+theme_override_fonts/font = ExtResource("2")
+theme_override_font_sizes/font_size = 9
+theme_override_colors/font_color = Color(0.424, 0.831, 1, 1)
+
+[node name="TalentContainer" type="ScrollContainer" parent="."]
+offset_left = 16.0
+offset_top = 264.0
+offset_right = 374.0
+offset_bottom = 768.0
+
+[node name="GridInner" type="GridContainer" parent="TalentContainer"]
+columns = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+
+[node name="ApplyButton" type="Button" parent="."]
+offset_left = 16.0
+offset_top = 786.0
+offset_right = 374.0
+offset_bottom = 826.0
+text = "▸ DONE"
+theme_override_fonts/font = ExtResource("2")
+theme_override_font_sizes/font_size = 12

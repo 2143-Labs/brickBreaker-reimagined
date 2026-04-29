@@ -8,9 +8,11 @@ var burn_stacks: int = 0
 
 var crack_level: int = 0
 var crack_overlay: Node2D = null
-var fire_overlay: Node2D = null
-var fire_time: float = 0.0
+var fire_overlay: ColorRect = null
+var fire_material: ShaderMaterial = null
 var last_hit_direction: Vector2 = Vector2.DOWN
+
+const BURN_SHADER = preload("res://assets/shaders/burn.gdshader")
 
 var is_dying: bool = false
 var railgun_death: bool = false
@@ -47,18 +49,31 @@ func _ready():
     crack_overlay.z_index = 1
     add_child(crack_overlay)
     crack_overlay.draw.connect(_draw_cracks)
-    fire_overlay = Node2D.new()
+
+    fire_overlay = ColorRect.new()
     fire_overlay.z_index = 2
     fire_overlay.visible = false
+    fire_overlay.color = Color(1, 1, 1, 1)
+    fire_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    # Sit on top of and slightly above the brick — flame rises off the top edge.
+    fire_overlay.offset_left = -30.0
+    fire_overlay.offset_right = 30.0
+    fire_overlay.offset_top = -50.0
+    fire_overlay.offset_bottom = 18.0
+    fire_material = ShaderMaterial.new()
+    fire_material.shader = BURN_SHADER
+    fire_material.set_shader_parameter("intensity", 0.0)
+    fire_material.set_shader_parameter("seed", randf() * 100.0)
+    fire_material.set_shader_parameter("source_y", 0.47)
+    fire_overlay.material = fire_material
     add_child(fire_overlay)
-    fire_overlay.draw.connect(_draw_fire)
 
-func _process(delta):
+func _process(_delta):
     if burn_stacks > 0:
-        fire_time += delta
         if fire_overlay:
             fire_overlay.visible = true
-            fire_overlay.queue_redraw()
+            var intensity = clamp(burn_stacks / 8.0, 0.15, 1.0)
+            fire_material.set_shader_parameter("intensity", intensity)
     elif fire_overlay:
         fire_overlay.visible = false
 
@@ -91,7 +106,6 @@ func add_burn_stack():
     burn_stacks += 1
     if fire_overlay:
         fire_overlay.visible = true
-        fire_overlay.queue_redraw()
 
 func process_burn():
     if burn_stacks > 0:
@@ -145,21 +159,6 @@ func _draw_cracks():
             end.x = clamp(end.x, -hw, hw)
             end.y = clamp(end.y, -hh, hh)
             crack_overlay.draw_line(Vector2.ZERO, end, crack_color, crack_width * 1.2)
-
-func _draw_fire():
-    if burn_stacks <= 0: return
-    var intensity = min(burn_stacks, 10) / 10.0
-    var hw = 20.0
-    var flames = 3 + int(intensity * 4)
-    for i in range(flames):
-        var x = randf_range(-hw, hw)
-        var height = randf_range(6, 12 + intensity * 8)
-        var width = randf_range(3, 5)
-        var flicker = sin(fire_time * 8 + i * 2.0) * 3
-        var base_y = -16.0
-        var tip_y = base_y - height + flicker
-        fire_overlay.draw_line(Vector2(x, base_y), Vector2(x, tip_y), Color(1.0, 0.6, 0.1, 0.4 + intensity * 0.3), width)
-        fire_overlay.draw_circle(Vector2(x, tip_y), width * 0.6, Color(1.0, 0.3, 0.1, 0.3 + intensity * 0.2))
 
 func update_display():
     if health_label:
