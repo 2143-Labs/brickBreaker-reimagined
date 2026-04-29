@@ -60,7 +60,7 @@ func get_ball_color() -> Color:
 	elif player_id == 2:
 		return Color(0.95, 0.35, 0.4)
 	else:
-		return Color(0.3, 0.55, 0.95)
+		return Progression.get_equipped_color_value() if get_node_or_null("/root/Progression") else Color(0.3, 0.55, 0.95)
 
 func _draw():
 	# Draw trail
@@ -82,7 +82,8 @@ func _draw():
 	elif player_id == 2:
 		draw_circle(Vector2.ZERO, 8, Color(0.95, 0.35, 0.4))
 	else:
-		draw_circle(Vector2.ZERO, 8, Color(0.3, 0.55, 0.95))
+		var p_col = Progression.get_equipped_color_value() if get_node_or_null("/root/Progression") else Color(0.3, 0.55, 0.95)
+		draw_circle(Vector2.ZERO, 8, p_col)
 
 func _process(delta):
 	if not is_multiplayer_authority():

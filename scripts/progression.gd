@@ -1,6 +1,20 @@
 extends Node
 const SAVE_PATH = "user://progression.save"
 
+var unlocked_colors: Array = ["blue"]
+var equipped_color: String = "blue"
+
+var SKIN_COLORS: Dictionary = {
+	"blue": Color(0.3, 0.55, 0.95),
+	"red": Color(0.95, 0.2, 0.2),
+	"yellow": Color(0.95, 0.85, 0.2),
+	"green": Color(0.2, 0.8, 0.3),
+	"pink": Color(0.95, 0.4, 0.8)
+}
+
+func get_equipped_color_value() -> Color:
+	return SKIN_COLORS.get(equipped_color, SKIN_COLORS["blue"])
+
 var xp: int = 0
 var level: int = 1
 var skill_points: int = 0
@@ -112,6 +126,8 @@ func save_data():
 			"skill_points": skill_points,
 			"total_sp": total_skill_points_earned,
 			"talents": talents,
+			"unlocked_colors": unlocked_colors,
+			"equipped_color": equipped_color
 		})
 		file.close()
 func load_data():
@@ -128,4 +144,7 @@ func load_data():
 				for key in saved_talents:
 					if talents.has(key):
 						talents[key] = saved_talents[key]
+				
+				unlocked_colors = data.get("unlocked_colors", ["blue"])
+				equipped_color = data.get("equipped_color", "blue")
 			file.close()
