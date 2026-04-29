@@ -21,6 +21,35 @@ var metal_mid = Color(0.5, 0.5, 0.53)
 var metal_light = Color(0.65, 0.65, 0.68)
 var metal_highlight = Color(0.75, 0.75, 0.78)
 
+var launcher_light: PointLight2D
+
+func _ready():
+	_setup_light()
+
+
+func _setup_light():
+	launcher_light = PointLight2D.new()
+	# Create a soft circular gradient
+	var gradient = Gradient.new()
+	gradient.offsets = [0.0, 0.7, 1.0]
+	gradient.colors = [Color(1, 1, 1, 1), Color(1, 1, 1, 0.4), Color(1, 1, 1, 0)]
+	
+	var texture = GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.fill = GradientTexture2D.FILL_RADIAL
+	texture.fill_from = Vector2(0.5, 0.5)
+	texture.width = 256
+	texture.height = 256
+	
+	launcher_light.texture = texture
+	launcher_light.texture_scale = 1.5
+	launcher_light.energy = 0.8
+	launcher_light.shadow_enabled = true
+	# Position it at the muzzle
+	launcher_light.position = Vector2(0, -20)
+	add_child(launcher_light)
+
+
 func _process(delta):
 	anim_time += delta
 	flame_time += delta
@@ -37,8 +66,41 @@ func _process(delta):
 		metal_light = base_c.darkened(0.2).lerp(Color(0.65, 0.65, 0.68), 0.75)
 		metal_highlight = base_c.lightened(0.2).lerp(Color(0.75, 0.75, 0.78), 0.75)
 
+	if launcher_light:
+		_update_light_logic(delta)
 	queue_redraw()
 
+func _update_light_logic(delta):
+	# Match the light color to the metal_highlight (which already syncs with player color/powerups)
+	var target_color = metal_light
+	
+	# Override color based on powerup type for extra juice
+	match launcher_type:
+		LauncherType.BOMB: target_color = Color(1.0, 0.5, 0.1)
+		LauncherType.RAILGUN: target_color = Color(0.2, 0.8, 1.0)
+		LauncherType.BURN: target_color = Color(1.0, 0.3, 0.1)
+		LauncherType.NUKE: target_color = Color(0.8, 1.0, 0.2)
+	
+	launcher_light.color = launcher_light.color.lerp(target_color, delta * 10.0)
+	
+	# Pulse the light slightly for a "lofi" breathing effect
+	var pulse = 0.1 * sin(anim_time * 4.0)
+	
+	if is_aiming:
+		# Brighten when player is aiming
+		launcher_light.energy = lerp(launcher_light.energy, 1.2 + pulse, delta * 5.0)
+		launcher_light.texture_scale = lerp(launcher_light.texture_scale, 2.0, delta * 5.0)
+	else:
+		# Dim glow when idle
+		launcher_light.energy = lerp(launcher_light.energy, 0.5 + pulse, delta * 2.0)
+		launcher_light.texture_scale = lerp(launcher_light.texture_scale, 1.2, delta * 2.0)
+
+# Add this helper function to call from player_controller when a ball is shot
+func flash():
+	if not launcher_light: return
+	var tween = create_tween()
+	tween.tween_property(launcher_light, "energy", 3.0, 0.05)
+	tween.tween_property(launcher_light, "energy", 0.8, 0.15)
 func set_type(type: int):
 	launcher_type = type
 	railgun_charging = (type == LauncherType.RAILGUN)

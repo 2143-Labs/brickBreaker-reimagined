@@ -69,6 +69,10 @@ func _ready():
 	if has_node("MultiplayerSynchronizer"):
 		$MultiplayerSynchronizer.synchronized.connect(update_display)
 
+	if health_label:
+		var mat = CanvasItemMaterial.new()
+		mat.light_mode = CanvasItemMaterial.LIGHT_MODE_UNSHADED
+		health_label.material = mat
 
 func _process(_delta):
 	if burn_stacks > 0:

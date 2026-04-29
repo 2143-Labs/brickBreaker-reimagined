@@ -95,7 +95,8 @@ func _process(delta):
 				trail_points.append(position)
 				if trail_points.size() > max_trail_points:
 					trail_points.pop_front()
-
+	if has_node("PointLight2D"):
+		$PointLight2D.color = get_ball_color()
 func _physics_process(delta):
 	if not launched or not is_active:
 		return

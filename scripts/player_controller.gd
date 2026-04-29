@@ -9,6 +9,8 @@ extends Node2D
 @onready var trajectory_preview = $TrajectoryPreview
 @onready var preview_ball = $PreviewBall
 
+var impact_light: PointLight2D
+
 var game_manager: Node2D
 var ball_container: Node2D
 var ammo_label: Label
@@ -47,6 +49,7 @@ func _ready():
 				ammo_label.visible = false
 	
 	_setup_preview_draw()
+	_setup_impact_light()
 
 func setup():
 	position = Vector2.ZERO
@@ -96,6 +99,8 @@ func can_spawn_ball() -> bool:
 func do_launch_ball(dir: Vector2):
 	if game_manager and game_manager.sound_manager:
 		game_manager.sound_manager.play("launch")
+
+	launcher.flash() 
 
 	var ball = preload("res://scenes/ball.tscn").instantiate()
 	ball.player_id = player_id
@@ -215,7 +220,9 @@ func clear_aim():
 	aim_line.clear_points()
 	trajectory_preview.clear_points()
 	launcher.clear_aim()
-
+	if impact_light:
+		impact_light.visible = false
+		
 func set_preview_visible(is_visible: bool):
 	preview_ball.visible = is_visible
 	if is_visible:
@@ -344,3 +351,30 @@ func _draw_aim_line(direction: Vector2):
 			pos = pos + dir_norm * 8.0
 			aim_line.add_point(pos)
 			pos = pos + dir_norm * 5.0
+
+	if result:
+		impact_light.visible = true
+		impact_light.global_position = result.position
+		impact_light.color = line_color
+	else:
+		impact_light.visible = false
+
+func _setup_impact_light():
+	impact_light = PointLight2D.new()
+	
+	# Create a tiny glow texture
+	var gradient = Gradient.new()
+	gradient.offsets = [0.0, 1.0]
+	gradient.colors = [Color(1, 1, 1, 1), Color(1, 1, 1, 0)]
+	var tex = GradientTexture2D.new()
+	tex.gradient = gradient
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.width = 64
+	tex.height = 64
+	
+	impact_light.texture = tex
+	impact_light.texture_scale = 0.5
+	impact_light.energy = 1.5
+	impact_light.visible = false # Hide by default
+	add_child(impact_light)

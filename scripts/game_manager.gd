@@ -883,6 +883,8 @@ func spawn_explosion_vfx(center: Vector2, radius: float):
 	var explosion = Node2D.new()
 	explosion.position = center
 	particle_container.add_child(explosion)
+
+	spawn_flash_light(center, Color(1.0, 0.6, 0.2), radius / 100.0, 0.4)
 	for i in range(16):
 		var p = ColorRect.new()
 		var s = randf_range(3, 8)
@@ -2180,3 +2182,40 @@ func _draw_combo_bar():
 	# Glow behind text
 	combo_bar.draw_string(ThemeDB.fallback_font, Vector2(text_x + 1, text_y + 1), text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, Color(0, 0, 0, 0.4))
 	combo_bar.draw_string(ThemeDB.fallback_font, Vector2(text_x, text_y), text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, bar_color)
+
+
+
+	
+# Helper to spawn a temporary light flash
+func spawn_flash_light(pos: Vector2, color: Color, size: float, duration: float, energy: float = 2.0):
+	var light = PointLight2D.new()
+	light.position = pos
+	
+	# Create a radial gradient texture in code
+	var gradient = Gradient.new()
+	gradient.offsets = [0.0, 1.0]
+	gradient.colors = [Color(1, 1, 1, 1), Color(1, 1, 1, 0)]
+	
+	var tex = GradientTexture2D.new()
+	tex.gradient = gradient
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.width = 256
+	tex.height = 256
+	
+	light.texture = tex
+	light.color = color
+	light.energy = energy
+	light.texture_scale = size
+	
+	particle_container.add_child(light)
+	
+	# Animate the light
+	var tween = create_tween()
+	tween.set_parallel(true)
+	# Expand slightly
+	tween.tween_property(light, "texture_scale", size * 1.5, duration).set_ease(Tween.EASE_OUT)
+	# Fade out energy
+	tween.tween_property(light, "energy", 0.0, duration).set_ease(Tween.EASE_IN)
+	# Cleanup
+	tween.chain().tween_callback(light.queue_free)
