@@ -15,6 +15,7 @@ const DIAGONAL_BRICK_SCENE = preload("res://scenes/diagonal_brick.tscn")
 const BOARD_CLEAR_SHADER = preload("res://assets/shaders/board_clear.gdshader")
 const OIL_BARREL_SCENE = preload("res://scenes/oil_barrel.tscn")
 const PICKUP_SCENE = preload("res://scenes/pickup.tscn")
+const BOSS_REWARD_SCRIPT = preload("res://scripts/boss_reward.gd")
 const SAVE_PATH = "user://highscore.save"
 
 @onready var brick_container = $BrickContainer
@@ -57,11 +58,11 @@ var settings_menu: Node = null
 @onready var nuke_name_label = $HUD/PowerupBar/NukeButton/NukeLabel
 @onready var nuke_label = $HUD/PowerupBar/NukeButton/NukeStatus
 
-var current_round: int = 1
+var current_round: int = 49
 var score: int = 0
 var pending_xp: int = 0
 var high_score: int = 0
-var ammo: int = 1
+var ammo: int = 49
 var bonus_ammo: int = 0
 var pending_ammo: int = 0
 var is_aiming: bool = false
@@ -128,6 +129,8 @@ var burn_cooldown: int = 0
 var burn_cooldown_max: int = 5
 var nuke_charges: int = 2
 var burn_round_active: bool = false
+var boss_reward_open: bool = false
+var _pending_round_spawn: bool = false
 
 # Super weapon upgrades (acquired from boss rewards)
 var super_bomb: bool = false
@@ -494,7 +497,26 @@ func update_powerup_button(button: Button, label: Label, cd: int, is_active: boo
 	# Legacy signature kept for compatibility; routed through the new card styling.
 	pass
 
+func _apply_super_labels() -> void:
+	var red := Color(1.0, 0.30, 0.32)  # punchy red, distinct from ROSE accent
+	# BOMB
+	if explosive_name_label:
+		explosive_name_label.text = "SUPER BOMB" if super_bomb else "BOMB"
+		explosive_name_label.add_theme_color_override("font_color", red if super_bomb else UITheme.TEXT)
+	# RAILGUN
+	if railgun_name_label:
+		railgun_name_label.text = "SUPER RAIL" if super_railgun else "RAILGUN"
+		railgun_name_label.add_theme_color_override("font_color", red if super_railgun else UITheme.TEXT)
+	# BURN
+	if burn_name_label:
+		burn_name_label.text = "SUPER BURN" if super_burn else "BURN"
+		burn_name_label.add_theme_color_override("font_color", red if super_burn else UITheme.TEXT)
+	# NUKE
+	if nuke_name_label:
+		nuke_name_label.text = "SUPER NUKE" if super_nuke else "NUKE"
+		nuke_name_label.add_theme_color_override("font_color", red if super_nuke else UITheme.TEXT)
 func update_all_powerup_ui():
+	_apply_super_labels()
 	# Explosive (lime)
 	if explosive_cooldown > 0:
 		_style_powerup_card(explosive_button, UITheme.LIME, "cd")
@@ -980,6 +1002,8 @@ func on_rainbow_brick_destroyed(pos: Vector2):
 	orb_container.add_child(pickup)
 
 func on_boss_killed(boss):
+	print("on_boss_killed: ", boss, " w=", boss.grid_width, " h=", boss.grid_height, " elite=", boss.is_elite, " mini=", boss.has_meta("is_mini_boss"), " final=", boss.is_final_boss)
+	var is_full_boss: bool = bool(boss.is_final_boss) or (not bool(boss.is_elite) and not boss.has_meta("is_mini_boss"))
 	if boss.is_final_boss:
 		spawn_modifier_popup("FINAL BOSS DEFEATED!", Color(1.0, 0.85, 0.2))
 	elif boss.is_elite:
@@ -999,6 +1023,25 @@ func on_boss_killed(boss):
 		if boss.grid_width == info["w"] and boss.grid_height == info["h"]:
 			if round_num not in bosses_killed:
 				bosses_killed.append(round_num)
+	if is_full_boss:
+		show_boss_reward_popup()
+
+func resume_round_after_reward():
+	boss_reward_open = false
+	if _pending_round_spawn:
+		_pending_round_spawn = false
+		spawn_round_content()
+		start_slide_existing()
+
+func show_boss_reward_popup():
+	if boss_reward_open or _pending_round_spawn:
+		return
+	for c in get_children():
+		if c.get_script() == BOSS_REWARD_SCRIPT:
+			return
+	var popup = BOSS_REWARD_SCRIPT.new()
+	add_child(popup)
+	popup.show_for_manager(self)
 
 # ---- ROUND MANAGEMENT ----
 
@@ -1130,8 +1173,11 @@ func end_round():
 	if preview_ball:
 		preview_ball.visible = false
 	update_launcher_type()
-	spawn_round_content()
-	start_slide_existing()
+	if boss_reward_open:
+		_pending_round_spawn = true
+	else:
+		spawn_round_content()
+		start_slide_existing()
 
 func try_spawn_boss():
 	if current_round % 25 != 0:
