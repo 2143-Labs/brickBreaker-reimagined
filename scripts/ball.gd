@@ -160,7 +160,13 @@ func _physics_process(delta):
 
 	queue_redraw()
 
-	if position.y > 540:
+	# Killbox: paddle line + escape detection. The arena is a 390x844 rect with
+	# walls at x=0..10, x=380..390, and y=120..130. A ball whose center leaves
+	# this rect has clipped through wall geometry — return it immediately
+	# instead of waiting on the max_alive_time backstop.
+	if position.y > 540 \
+			or position.x < -10 or position.x > 400 \
+			or position.y < -10:
 		is_active = false
 		ball_landed.emit(position.x, player_id)
 		ball_returned.emit(player_id)
