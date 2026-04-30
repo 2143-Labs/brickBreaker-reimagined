@@ -131,6 +131,11 @@ var nuke_charges: int = 2
 var burn_round_active: bool = false
 var boss_reward_open: bool = false
 var _pending_round_spawn: bool = false
+var _bricks_hit_this_round: int = 0
+var _first_ball_land_msec: int = -1
+var _miss_fade_started: bool = false
+const MISS_FADE_GRACE_MSEC: int = 1000
+const MISS_FADE_DURATION: float = 0.4
 
 # Super weapon upgrades (acquired from boss rewards)
 var super_bomb: bool = false
@@ -321,6 +326,8 @@ func refresh_draw():
 	queue_redraw()
 
 func _physics_process(delta):
+	_check_ball_killbox()
+	_check_miss_fade()
 	if shake_amount > 0.1:
 		shake_amount = lerp(shake_amount, 0.0, shake_decay * delta)
 		position = original_position + Vector2(randf_range(-shake_amount, shake_amount), randf_range(-shake_amount, shake_amount))
@@ -1043,6 +1050,68 @@ func show_boss_reward_popup():
 	add_child(popup)
 	popup.show_for_manager(self)
 
+# Killbox bounds — generous margins outside the 390x844 viewport.
+# Any ball whose position exits these is force-returned (no x_pos update).
+const KILLBOX_MIN = Vector2(-60, -60)
+const KILLBOX_MAX = Vector2(450, 920)
+
+func _any_brick_damaged() -> bool:
+	for b in brick_container.get_children():
+		if "health" in b and "max_health" in b and b.health < b.max_health:
+			return true
+	if _bricks_hit_this_round > 0:
+		return true
+	return false
+
+func _check_miss_fade() -> void:
+	if not is_firing or _miss_fade_started:
+		return
+	# Find balls. Need at least one ball that has landed (no longer in play) to start the timer.
+	var balls = get_tree().get_nodes_in_group("balls")
+	var any_landed := balls.size() < balls_to_spawn  # crude: spawned more than currently exist
+	if balls_in_play <= 0 and balls.size() == 0:
+		return  # round already ending normally
+	if _any_brick_damaged():
+		_first_ball_land_msec = -1
+		return
+	if any_landed and _first_ball_land_msec < 0:
+		_first_ball_land_msec = Time.get_ticks_msec()
+	if _first_ball_land_msec > 0 and Time.get_ticks_msec() - _first_ball_land_msec > MISS_FADE_GRACE_MSEC:
+		_start_miss_fade(balls)
+
+func _start_miss_fade(balls: Array) -> void:
+	_miss_fade_started = true
+	# Halt the spawn pipeline so no more balls leave the chamber
+	is_spawning = false
+	balls_to_spawn = 0
+	spawn_distance_accumulator = 0.0
+	is_firing = false
+	for ball in balls:
+		if not is_instance_valid(ball):
+			continue
+		if "is_active" in ball:
+			ball.is_active = false
+		var tw = create_tween()
+		tw.tween_property(ball, "modulate:a", 0.0, MISS_FADE_DURATION)
+		tw.tween_callback(func():
+			if is_instance_valid(ball):
+				if ball.has_signal("ball_returned"):
+					ball.emit_signal("ball_returned")
+				ball.queue_free()
+		)
+
+func _check_ball_killbox() -> void:
+	for ball in get_tree().get_nodes_in_group("balls"):
+		if not is_instance_valid(ball):
+			continue
+		var p: Vector2 = ball.global_position
+		if p.x < KILLBOX_MIN.x or p.x > KILLBOX_MAX.x or p.y < KILLBOX_MIN.y or p.y > KILLBOX_MAX.y:
+			if "is_active" in ball:
+				ball.is_active = false
+			if ball.has_signal("ball_returned"):
+				ball.emit_signal("ball_returned")
+			ball.queue_free()
+
 # ---- ROUND MANAGEMENT ----
 
 func _on_ball_landed(x_pos: float):
@@ -1100,6 +1169,9 @@ func on_railgun_death_finished():
 
 func end_round():
 	is_firing = false
+	_first_ball_land_msec = -1
+	_miss_fade_started = false
+	_bricks_hit_this_round = 0
 	board_clear_played = false
 	current_round += 1
 	launch_point.x = next_launch_x
