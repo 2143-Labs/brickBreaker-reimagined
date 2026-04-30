@@ -990,6 +990,9 @@ func on_boss_killed(boss):
 		pickup.pickup_type = randi_range(0, 1)
 		orb_container.add_child(pickup)
 		spawn_modifier_popup("ELITE DEFEATED!", Color(0.6, 0.3, 0.9))
+	elif boss.has_meta("is_mini_boss"):
+		spawn_blue_ammo_orb(boss.global_position)
+		spawn_modifier_popup("MINI BOSS DOWN! +5 AMMO", Color(0.18, 0.40, 0.85))
 	# Track killed boss rounds for elite system
 	for round_num in boss_schedule.keys():
 		var info = boss_schedule[round_num]
@@ -1131,53 +1134,54 @@ func end_round():
 	start_slide_existing()
 
 func try_spawn_boss():
-    if current_round % 25 != 0:
-        return
-    var boss_tier = current_round / 25
-    if boss_tier % 2 == 1:
-        spawn_mini_boss()
-    else:
-        var info = get_boss_info_for_tier(boss_tier)
-        if info:
-            spawn_boss(info)
+	if current_round % 25 != 0:
+		return
+	var boss_tier = current_round / 25
+	if boss_tier % 2 == 1:
+		spawn_mini_boss()
+	else:
+		var info = get_boss_info_for_tier(boss_tier)
+		if info:
+			spawn_boss(info)
 
 func spawn_mini_boss():
-    var boss = BOSS_BRICK_SCENE.instantiate()
-    boss.grid_width = 2
-    boss.grid_height = 2
-    boss.health = current_round
-    boss.max_health = current_round
-    boss.is_elite = false
-    boss.has_shield = false
-    boss.set_meta("is_mini_boss", true)
-    var occupied = get_occupied_cells()
-    var max_col = grid_cols - 2
-    var col = randi_range(0, max(0, max_col))
-    var attempts = 0
-    while (Vector2(col, 0) in occupied or Vector2(col + 1, 0) in occupied) and attempts < 20:
-        col = randi_range(0, max(0, max_col))
-        attempts += 1
-    var x = grid_start_x + col * cell_width + cell_width / 2.0
-    var y = grid_start_y + cell_height / 2.0
-    boss.position = Vector2(x, y)
-    brick_container.add_child(boss)
+	var boss = BOSS_BRICK_SCENE.instantiate()
+	boss.grid_width = 2
+	boss.grid_height = 2
+	boss.health = current_round
+	boss.max_health = current_round
+	boss.is_elite = false
+	boss.has_shield = false
+	boss.set_meta("is_mini_boss", true)
+	var occupied = get_occupied_cells()
+	var max_col = grid_cols - 2
+	var col = randi_range(0, max(0, max_col))
+	var attempts = 0
+	while (Vector2(col, 0) in occupied or Vector2(col + 1, 0) in occupied) and attempts < 20:
+		col = randi_range(0, max(0, max_col))
+		attempts += 1
+	var x = grid_start_x + col * cell_width + cell_width / 2.0
+	var y = grid_start_y + cell_height / 2.0
+	boss.position = Vector2(x, y)
+	brick_container.add_child(boss)
 func get_boss_info_for_tier(tier: int) -> Dictionary:
-    match tier:
-        2: return {"w": 2, "h": 3, "shield": 0}
-        4: return {"w": 3, "h": 3, "shield": 10}
-        6: return {"w": 3, "h": 4, "shield": 25}
-        8: return {"w": 4, "h": 4, "shield": 50}
-    if tier >= 12:
-        var iteration = (tier - 12) / 2
-        return {"w": 7, "h": 2, "shield": 50, "is_final": true, "health_override": 1000 + iteration * 500, "guardians": true, "moves_every_other": true}
-    return {"w": 4, "h": 4, "shield": 50}
+	match tier:
+		2: return {"w": 2, "h": 3, "shield": 0}
+		4: return {"w": 3, "h": 3, "shield": 10}
+		6: return {"w": 3, "h": 4, "shield": 25}
+		8: return {"w": 4, "h": 4, "shield": 50}
+	if tier >= 12:
+		var iteration = (tier - 12) / 2
+		return {"w": 7, "h": 2, "shield": 50, "is_final": true, "health_override": 1000 + iteration * 500, "guardians": true, "moves_every_other": true}
+	return {"w": 4, "h": 4, "shield": 50}
 
 func spawn_blue_ammo_orb(pos: Vector2):
-    var orb = AMMO_ORB_SCENE.instantiate()
-    orb.position = pos
-    orb.set_meta("ammo_value", 5)
-    orb.set_meta("is_blue", true)
-    orb_container.add_child(orb)
+	var orb = AMMO_ORB_SCENE.instantiate()
+	orb.position = pos
+	orb.ammo_value = 5
+	orb.is_blue = true
+	orb_container.add_child(orb)
+	sound_manager.play_orb() if sound_manager and sound_manager.has_method("play_orb") else null
 
 func spawn_guardians_if_needed():
 	for brick in brick_container.get_children():
@@ -1276,10 +1280,6 @@ func try_spawn_special_bricks():
 			barrel.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
 			brick_container.add_child(barrel)
 
-func try_spawn_boss():
-	var boss_info = get_boss_info(current_round)
-	if boss_info:
-		spawn_boss(boss_info)
 
 func get_boss_info(round_num: int) -> Variant:
 	if boss_schedule.has(round_num):
@@ -1587,6 +1587,9 @@ func spawn_ammo_orbs_at_row0() -> Array:
 	var spawned = []
 	if not game_active:
 		return spawned
+	# Ammo rebalance: 50% skip chance after first mini boss (round 25)
+	if current_round > 25 and randf() > 0.5:
+		return spawned
 	var occupied = get_occupied_cells()
 	var available = []
 	for c in range(grid_cols):
@@ -1759,8 +1762,8 @@ func update_hud():
 			$HUD.get_node("SPLabel").add_theme_color_override("font_color", UITheme.TEXT_MUTE)
 		$HUD.get_node("SPLabel").text = "%d" % Progression.skill_points
 
-func collect_ammo_orb():
-	pending_ammo += 1
+func collect_ammo_orb(value: int = 1):
+	pending_ammo += value
 	sound_manager.play_orb()
 func save_high_score():
 	var file = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
