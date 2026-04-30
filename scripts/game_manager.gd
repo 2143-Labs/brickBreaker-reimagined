@@ -92,7 +92,7 @@ var arena_top: float = 130.0
 var grid_cols: int = 7
 var cell_width: float = 52.0
 var cell_height: float = 38.0
-var max_rows: int = 10
+var max_rows: int = 9
 
 var grid_start_x: float
 var grid_start_y: float
@@ -108,7 +108,7 @@ var drop_duration: float = 0.25
 var dropping_bricks: Array = []
 var dropping_orbs: Array = []
 
-var death_row: int = 9
+var death_row: int = 8
 var shake_amount: float = 0.0
 var shake_decay: float = 8.0
 var original_position: Vector2 = Vector2.ZERO
@@ -128,6 +128,18 @@ var burn_cooldown: int = 0
 var burn_cooldown_max: int = 5
 var nuke_charges: int = 2
 var burn_round_active: bool = false
+
+# Super weapon upgrades (acquired from boss rewards)
+var super_bomb: bool = false
+var super_railgun: bool = false
+var super_burn: bool = false
+var super_nuke: bool = false
+
+# Permanent ball powers (acquired from boss rewards)
+var has_triple_shot: bool = false
+var has_seeing_double: bool = false
+# Railgun chain kill tracking
+var _railgun_kill_positions: Array = []
 
 # Boss system
 var boss_schedule = {
@@ -1117,6 +1129,55 @@ func end_round():
 	update_launcher_type()
 	spawn_round_content()
 	start_slide_existing()
+
+func try_spawn_boss():
+    if current_round % 25 != 0:
+        return
+    var boss_tier = current_round / 25
+    if boss_tier % 2 == 1:
+        spawn_mini_boss()
+    else:
+        var info = get_boss_info_for_tier(boss_tier)
+        if info:
+            spawn_boss(info)
+
+func spawn_mini_boss():
+    var boss = BOSS_BRICK_SCENE.instantiate()
+    boss.grid_width = 2
+    boss.grid_height = 2
+    boss.health = current_round
+    boss.max_health = current_round
+    boss.is_elite = false
+    boss.has_shield = false
+    boss.set_meta("is_mini_boss", true)
+    var occupied = get_occupied_cells()
+    var max_col = grid_cols - 2
+    var col = randi_range(0, max(0, max_col))
+    var attempts = 0
+    while (Vector2(col, 0) in occupied or Vector2(col + 1, 0) in occupied) and attempts < 20:
+        col = randi_range(0, max(0, max_col))
+        attempts += 1
+    var x = grid_start_x + col * cell_width + cell_width / 2.0
+    var y = grid_start_y + cell_height / 2.0
+    boss.position = Vector2(x, y)
+    brick_container.add_child(boss)
+func get_boss_info_for_tier(tier: int) -> Dictionary:
+    match tier:
+        2: return {"w": 2, "h": 3, "shield": 0}
+        4: return {"w": 3, "h": 3, "shield": 10}
+        6: return {"w": 3, "h": 4, "shield": 25}
+        8: return {"w": 4, "h": 4, "shield": 50}
+    if tier >= 12:
+        var iteration = (tier - 12) / 2
+        return {"w": 7, "h": 2, "shield": 50, "is_final": true, "health_override": 1000 + iteration * 500, "guardians": true, "moves_every_other": true}
+    return {"w": 4, "h": 4, "shield": 50}
+
+func spawn_blue_ammo_orb(pos: Vector2):
+    var orb = AMMO_ORB_SCENE.instantiate()
+    orb.position = pos
+    orb.set_meta("ammo_value", 5)
+    orb.set_meta("is_blue", true)
+    orb_container.add_child(orb)
 
 func spawn_guardians_if_needed():
 	for brick in brick_container.get_children():
