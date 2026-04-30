@@ -64,6 +64,7 @@ var high_score: int = 0
 var ammo: int = 1
 var bonus_ammo: int = 0
 var pending_ammo: int = 0
+var pending_ball_types: Array[int] = []
 var is_aiming: bool = false
 var last_aim_pos: Vector2 = Vector2.ZERO
 
@@ -1037,9 +1038,8 @@ func spawn_ammo_popup(count: int):
 	broadcast_vfx("ammo_popup", lp, {"count": count})
 
 func spawn_ammo_popup_vfx(count: int):
-	for p in players.values():
-		p.magazine.add_ball_plop()
-		
+	# Plop animation + ball_types append happens directly at end_round per
+	# pending type, so we don't trigger it again here.
 	var lp = players[1].launch_point if players.has(1) else Vector2(195, arena_bottom)
 	var tier = min(count, 5)
 	var label = Label.new()
@@ -1441,8 +1441,12 @@ func end_round():
 	# Handle accumulated ammo from orbs
 	if pending_ammo > 0:
 		bonus_ammo += pending_ammo
+		for p in players.values():
+			for t in pending_ball_types:
+				p.magazine.add_ball_plop(t)
 		spawn_ammo_popup(pending_ammo)
 		pending_ammo = 0
+		pending_ball_types.clear()
 	
 	update_launcher_type()
 
@@ -2049,8 +2053,9 @@ func update_hud():
 			$HUD.get_node("SPLabel").add_theme_color_override("font_color", UITheme.TEXT_MUTE)
 		$HUD.get_node("SPLabel").text = "%d" % Progression.skill_points
 
-func collect_ammo_orb():
+func collect_ammo_orb(ball_type: int = BallType.NORMAL):
 	pending_ammo += 1
+	pending_ball_types.append(ball_type)
 	sound_manager.play_orb()
 
 func save_high_score():

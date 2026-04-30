@@ -2,6 +2,9 @@ extends Node2D
 
 var tube_points: PackedVector2Array = PackedVector2Array()
 var ball_positions: Array = []
+# Per-slot ball type, parallel to total_ammo. Front of queue (index 0) fires
+# first; returned balls push to the back via push_returned_type().
+var ball_types: Array[int] = []
 var total_ammo: int = 0
 var balls_in_tube: int = 30
 var tube_color = Color(0.16, 0.18, 0.21, 1.0)
@@ -86,6 +89,10 @@ func recalculate_ball_positions():
 func set_ammo(count: int):
 	total_ammo = count
 	balls_in_tube = count
+	while ball_types.size() < count:
+		ball_types.append(BallType.NORMAL)
+	if ball_types.size() > count:
+		ball_types.resize(count)
 	recalculate_ball_positions()
 	queue_redraw()
 
@@ -94,16 +101,27 @@ func fire_ball():
 		balls_in_tube -= 1
 		queue_redraw()
 
+func pop_front_type() -> int:
+	if ball_types.is_empty():
+		return BallType.NORMAL
+	var t: int = ball_types[0]
+	ball_types.remove_at(0)
+	return t
+
+func push_returned_type(t: int):
+	ball_types.append(t)
+
 func return_ball():
 	balls_in_tube += 1
 	if balls_in_tube > total_ammo:
 		balls_in_tube = total_ammo
 	queue_redraw()
 
-func add_ball_plop():
+func add_ball_plop(t: int = BallType.NORMAL):
 	var new_idx = total_ammo
 	total_ammo += 1
 	balls_in_tube += 1
+	ball_types.append(t)
 	recalculate_ball_positions()
 	if new_idx < ball_positions.size():
 		plop_balls.append({"dist": ball_positions[new_idx], "progress": 0.0, "duration": 0.5})
@@ -189,6 +207,8 @@ func _draw():
 	for i in range(balls_in_tube):
 		if i < ball_positions.size():
 			var pos = get_point_at_distance(ball_positions[i])
+			var slot_type: int = ball_types[i] if i < ball_types.size() else BallType.NORMAL
+			var slot_color: Color = p_ball_color if slot_type == BallType.NORMAL else BallType.color(slot_type)
 			var is_plop = false
 			for pb in plop_balls:
 				if abs(pb["dist"] - ball_positions[i]) < 1.0:
@@ -199,13 +219,13 @@ func _draw():
 					elif t < 0.6: scale_t = lerp(1.3, 0.9, (t - 0.4) / 0.2)
 					else: scale_t = lerp(0.9, 1.0, (t - 0.6) / 0.4)
 					var r = 7.0 * scale_t
-					var c = Color(0.3, 0.8, 0.4).lerp(p_ball_color, t)
+					var c = Color(0.3, 0.8, 0.4).lerp(slot_color, t)
 					draw_circle(pos, r, c)
 					if t < 0.5:
 						draw_circle(pos, r + 4, Color(0.3, 0.8, 0.4, 0.3 * (1.0 - t * 2)))
 					break
 			if not is_plop:
-				draw_circle(pos, 7, p_ball_color)
+				draw_circle(pos, 7, slot_color)
 				if modifier_tint.a > 0:
 					draw_circle(pos, 7, modifier_tint)
 				draw_circle(pos + Vector2(-2, -2), 2.5, Color(0.5, 0.7, 1.0, 0.3))

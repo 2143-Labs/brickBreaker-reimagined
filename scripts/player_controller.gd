@@ -100,8 +100,33 @@ func do_launch_ball(dir: Vector2):
 	if game_manager and game_manager.sound_manager:
 		game_manager.sound_manager.play("launch")
 
-	launcher.flash() 
+	launcher.flash()
 
+	var ball_type: int = magazine.pop_front_type()
+
+	if ball_type == BallType.SHOTGUN:
+		# Shotgun: 3 mini-balls in a 20° cone. Damage 1, smaller radius. To keep
+		# magazine accounting simple, only the middle ball is "magazine-coupled"
+		# (its return decrements/increments the tube count and pushes SHOTGUN
+		# back into the type queue). The other two are pure subballs that only
+		# notify game_manager for round-end accounting.
+		var spread_rad: float = deg_to_rad(20.0)
+		var angles = [-spread_rad * 0.5, 0.0, spread_rad * 0.5]
+		for i in range(3):
+			var ang: float = angles[i]
+			var skip: bool = i != 1
+			var ret_t: int = -1 if skip else BallType.SHOTGUN
+			var b = _spawn_ball(dir.rotated(ang), BallType.NORMAL, 5, skip, ret_t)
+			b.damage = 1
+	else:
+		_spawn_ball(dir, ball_type, 8, false)
+
+	if MP.is_server():
+		sync_magazine_fire.rpc()
+	else:
+		sync_magazine_fire()
+
+func _spawn_ball(dir: Vector2, ball_type: int, radius: int = 8, skip_magazine: bool = false, return_as_type: int = -1) -> Node:
 	var ball = preload("res://scenes/ball.tscn").instantiate()
 	ball.player_id = player_id
 	ball.position = launch_point
@@ -109,15 +134,22 @@ func do_launch_ball(dir: Vector2):
 	ball.damage_multiplier = damage_multiplier
 	ball.is_powered = is_powered
 	ball.applies_burn = applies_burn
-	ball.ball_returned.connect(func(pid): handle_ball_returned(pid))
+	ball.ball_type = ball_type
+	ball.radius = radius
+	if skip_magazine:
+		ball.ball_returned.connect(func(pid, _t):
+			if game_manager:
+				game_manager._on_ball_returned(pid)
+		)
+	elif return_as_type != -1:
+		var rt: int = return_as_type
+		ball.ball_returned.connect(func(pid, _t): handle_ball_returned(pid, rt))
+	else:
+		ball.ball_returned.connect(func(pid, t): handle_ball_returned(pid, t))
 	ball.ball_landed.connect(func(x, pid): handle_ball_landed(x, pid))
 	ball_container.add_child(ball, true)
 	ball.launch(dir)
-	
-	if MP.is_server():
-		sync_magazine_fire.rpc()
-	else:
-		sync_magazine_fire()
+	return ball
 
 @rpc("authority", "call_local", "reliable")
 func start_firing_rpc(dir: Vector2, total_ammo: int, p_type: int, dmg_mult: float, burn_active: bool, is_pow: bool = false):
@@ -180,12 +212,14 @@ func handle_ball_landed(x_pos: float, p_id: int):
 				animate_launcher.rpc(nx)
 			elif not MP.is_multiplayer:
 				animate_launcher(nx)
-func handle_ball_returned(p_id: int):
+func handle_ball_returned(p_id: int, ball_type: int = BallType.NORMAL):
 	if MP.is_server():
 		sync_magazine_return.rpc()
 	else:
 		sync_magazine_return()
-		
+
+	magazine.push_returned_type(ball_type)
+
 	if game_manager:
 		game_manager._on_ball_returned(p_id)
 
