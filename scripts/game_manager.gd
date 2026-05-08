@@ -615,6 +615,8 @@ func update_ammo_label_position():
 
 static func clamp_launch_direction(dir: Vector2) -> Vector2:
 	# Clamp to minimum angle from horizontal
+	if dir == Vector2.ZERO:
+		return Vector2(0.0, -1.0)
 	if -dir.y < sin(MIN_LAUNCH_ANGLE):
 		var clamped_y = -sin(MIN_LAUNCH_ANGLE)
 		var clamped_x = cos(MIN_LAUNCH_ANGLE) * sign(dir.x)
