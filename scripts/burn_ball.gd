@@ -37,6 +37,8 @@ func _physics_process(delta):
         direction = direction.bounce(collision.get_normal())
         var collider = collision.get_collider()
         if collider.has_method("take_damage"):
+            if collider.has_method("track_hit_side"):
+                collider.track_hit_side(collision.get_normal())
             collider.take_damage(1)
             # Apply burn DOT
             if collider.has_method("apply_burn"):

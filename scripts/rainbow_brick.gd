@@ -22,6 +22,15 @@ func _draw():
     draw_circle(Vector2(-8 * cos(rainbow_time * 2.5), -6 * sin(rainbow_time * 3.5)), 2, sparkle_color)
 
 func take_damage(amount: int, _hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
+
+    # Multi-side bonus: each unique side hit recently multiplies damage
+    var _ms_now = Time.get_ticks_msec()
+    var unique_sides = 0
+    for s in hit_sides.keys():
+        if _ms_now - hit_sides[s] <= _multi_side_window_ms:
+            unique_sides += 1
+    if unique_sides >= 2:
+        amount *= unique_sides
     health -= amount
     if health <= 0:
         destroy()

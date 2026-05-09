@@ -30,6 +30,15 @@ func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool
             tween.tween_property(sprite, "modulate", Color(1, 1, 1, 1), 0.1)
         return
 
+    # Multi-side bonus: each unique side hit recently multiplies damage
+    var _ms_now = Time.get_ticks_msec()
+    var unique_sides = 0
+    for s in hit_sides.keys():
+        if _ms_now - hit_sides[s] <= _multi_side_window_ms:
+            unique_sides += 1
+    if unique_sides >= 2:
+        amount *= unique_sides
+
     health -= amount
     update_display()
     if sprite and health > 0:

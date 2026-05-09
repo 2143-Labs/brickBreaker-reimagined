@@ -21,6 +21,8 @@ var railgun_hit_offset: Vector2 = Vector2.ZERO
 
 # Stacking damage tracking: how many times same ball stream hit this brick
 var hit_count: int = 0
+var hit_sides: Dictionary = {}   # side_name -> timestamp_ms
+var _multi_side_window_ms: int = 300
 
 static var tier_thresholds = [5, 10, 20, 50, 100]
 
@@ -68,6 +70,21 @@ func _ready():
     fire_overlay.material = fire_material
     add_child(fire_overlay)
 
+func track_hit_side(normal: Vector2):
+    var side = _classify_side(normal)
+    var now = Time.get_ticks_msec()
+    # Clean expired entries
+    for s in hit_sides.keys():
+        if now - hit_sides[s] > _multi_side_window_ms:
+            hit_sides.erase(s)
+    hit_sides[side] = now
+
+func _classify_side(normal: Vector2) -> String:
+    if abs(normal.x) > abs(normal.y):
+        return "right" if normal.x > 0 else "left"
+    else:
+        return "bottom" if normal.y > 0 else "top"
+
 func _process(_delta):
     if burn_stacks > 0:
         if fire_overlay:
@@ -86,6 +103,14 @@ func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool
     if stack_max > 0:
         var stack_bonus = min(hit_count - 1, stack_max)
         amount += stack_bonus
+    # Multi-side bonus: each unique side hit recently multiplies damage
+    var _ms_now = Time.get_ticks_msec()
+    var unique_sides = 0
+    for s in hit_sides.keys():
+        if _ms_now - hit_sides[s] <= _multi_side_window_ms:
+            unique_sides += 1
+    if unique_sides >= 2:
+        amount *= unique_sides
 
     # Cracked bricks take 2x damage
     if crack_level > 0:
