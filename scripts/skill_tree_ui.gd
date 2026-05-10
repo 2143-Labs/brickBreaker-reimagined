@@ -82,6 +82,7 @@ func _make_skill_card(key: String, def: Dictionary, rank: int, max_rank: int, ma
 	var sb = UITheme.make_card(UITheme.BG_CARD, UITheme.LIME_LINE if maxed else UITheme.LINE, UITheme.R_MD)
 	sb.set_content_margin_all(12)
 	card.add_theme_stylebox_override("panel", sb)
+    card.tooltip_text = def["desc"]
 
 	# Title
 	var name_lbl = Label.new()
