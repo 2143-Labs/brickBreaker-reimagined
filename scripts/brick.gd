@@ -5,6 +5,7 @@ var burn_stacks: int = 0
 
 @onready var sprite = $Sprite
 @onready var health_label = $HealthLabel
+var burn_label: Label = null
 
 var crack_level: int = 0
 var crack_overlay: Node2D = null
@@ -68,14 +69,32 @@ func _ready():
     fire_overlay.material = fire_material
     add_child(fire_overlay)
 
+    burn_label = Label.new()
+    burn_label.z_index = 3
+    burn_label.visible = false
+    burn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    burn_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.1))
+    burn_label.add_theme_font_size_override("font_size", 14)
+    burn_label.offset_left = -25.0
+    burn_label.offset_top = -48.0
+    burn_label.offset_right = 25.0
+    burn_label.offset_bottom = -36.0
+    add_child(burn_label)
+
 func _process(_delta):
     if burn_stacks > 0:
         if fire_overlay:
             fire_overlay.visible = true
             var intensity = clamp(burn_stacks / 8.0, 0.15, 1.0)
             fire_material.set_shader_parameter("intensity", intensity)
-    elif fire_overlay:
-        fire_overlay.visible = false
+        if burn_label:
+            burn_label.visible = true
+            burn_label.text = "×%d" % burn_stacks
+    else:
+        if fire_overlay:
+            fire_overlay.visible = false
+        if burn_label:
+            burn_label.visible = false
 
 func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
     last_hit_direction = hit_dir
