@@ -11,6 +11,7 @@ var crack_overlay: Node2D = null
 var fire_overlay: ColorRect = null
 var fire_material: ShaderMaterial = null
 var last_hit_direction: Vector2 = Vector2.DOWN
+var _is_hovered: bool = false
 
 const BURN_SHADER = preload("res://assets/shaders/burn.gdshader")
 
@@ -76,6 +77,19 @@ func _process(_delta):
             fire_material.set_shader_parameter("intensity", intensity)
     elif fire_overlay:
         fire_overlay.visible = false
+
+    # Mouse hover detection for tooltip
+    var mouse_pos = get_global_mouse_position()
+    var half_size = Vector2(25, 18)
+    var hovering = Rect2(position - half_size, half_size * 2).has_point(mouse_pos)
+    if hovering != _is_hovered:
+        _is_hovered = hovering
+        var mgr = get_tree().get_first_node_in_group("game_manager")
+        if mgr:
+            if hovering:
+                mgr.show_brick_tooltip(get_tooltip_text(), mouse_pos + Vector2(10, -25))
+            else:
+                mgr.hide_brick_tooltip()
 
 func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
     last_hit_direction = hit_dir
@@ -242,3 +256,6 @@ func get_brick_value() -> int:
     else:
         var extra = int((max_health - 200) / 100)
         return 10 + extra * 5
+
+func get_tooltip_text() -> String:
+    return "Brick — HP: %d/%d" % [health, max_health]
