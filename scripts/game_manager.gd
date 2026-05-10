@@ -554,12 +554,15 @@ func update_all_powerup_ui():
 	if triple_cooldown > 0:
 		_style_powerup_card(triple_button, UITheme.CYAN, "cd")
 		triple_button.disabled = true
+		triple_button.text = "%d ROUNDS" % triple_cooldown
 	elif active_powerup == ActivePowerup.TRIPLE:
 		_style_powerup_card(triple_button, UITheme.CYAN, "armed")
 		triple_button.disabled = false
+		triple_button.text = "TRIPLE"
 	else:
 		_style_powerup_card(triple_button, UITheme.CYAN, "ready")
 		triple_button.disabled = false
+		triple_button.text = "TRIPLE"
 
 func update_launcher_type():
 		match active_powerup:
@@ -815,6 +818,8 @@ func start_firing():
 		var spread_angle = deg_to_rad(15.0)
 		var angles = [-spread_angle, 0.0, spread_angle]
 		for a in angles:
+			if balls_to_spawn <= 0:
+				break
 			fire_direction = center_dir.rotated(a)
 			do_launch_ball()
 			balls_to_spawn -= 1
