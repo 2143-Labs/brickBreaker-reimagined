@@ -28,6 +28,19 @@ func _process(delta):
     if warning_overlay:
         warning_overlay.queue_redraw()
 
+    # Mouse hover detection for tooltip
+    var mouse_pos = get_global_mouse_position()
+    var half_size = Vector2(25, 18)
+    var hovering = Rect2(position - half_size, half_size * 2).has_point(mouse_pos)
+    if hovering != _is_hovered:
+        _is_hovered = hovering
+        var mgr = get_tree().get_first_node_in_group("game_manager")
+        if mgr:
+            if hovering:
+                mgr.show_brick_tooltip(get_tooltip_text(), mouse_pos + Vector2(10, -25))
+            else:
+                mgr.hide_brick_tooltip()
+
 func take_damage(amount: int, hit_dir: Vector2 = Vector2.DOWN, _is_special: bool = false):
     last_hit_direction = hit_dir
     health -= amount
