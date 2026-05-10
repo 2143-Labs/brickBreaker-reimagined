@@ -1809,12 +1809,7 @@ func _is_board_clear() -> bool:
 		if "is_dying" in b and b.is_dying:
 			continue
 		return false
-	for o in orb_container.get_children():
-		if not is_instance_valid(o):
-			continue
-		if "is_dying" in o and o.is_dying:
-			continue
-		return false
+	# Orbs are bonus pickups — don't block round end
 	return true
 
 func _check_board_clear_visual():
