@@ -1824,6 +1824,9 @@ func _check_board_clear_visual():
 		return
 	board_clear_played = true
 	play_board_clear()
+	var full_clear_bonus = 100 * current_round
+	add_score(full_clear_bonus)
+	spawn_full_clear_text()
 	# Kill all balls so the round ends without waiting for them to drift back
 	for ball in ball_container.get_children():
 		if is_instance_valid(ball):
@@ -2006,4 +2009,27 @@ func spawn_combo_text(combo: int):
 		if is_instance_valid(combo_label):
 			combo_label.queue_free()
 			combo_label = null
+	)
+
+func spawn_full_clear_text():
+	var label = Label.new()
+	label.text = "FULL CLEAR!"
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.position = Vector2(120, 280)
+	label.add_theme_font_size_override("font_size", 32)
+	label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
+	label.add_theme_constant_override("shadow_offset_x", 2)
+	label.add_theme_constant_override("shadow_offset_y", 2)
+	add_child(label)
+
+	var tween = label.create_tween()
+	tween.set_parallel(true)
+	label.scale = Vector2(1.3, 1.3)
+	tween.tween_property(label, "scale", Vector2(1.0, 1.0), 0.3).set_ease(Tween.EASE_OUT)
+	tween.tween_property(label, "position:y", label.position.y - 20, 1.0).set_ease(Tween.EASE_OUT)
+	tween.tween_property(label, "modulate:a", 0.0, 1.0).set_ease(Tween.EASE_IN)
+	tween.chain().tween_callback(func():
+		if is_instance_valid(label):
+			label.queue_free()
 	)
