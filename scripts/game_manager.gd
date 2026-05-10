@@ -56,6 +56,7 @@ var settings_menu: Node = null
 @onready var nuke_button = $HUD/PowerupBar/NukeButton
 @onready var nuke_name_label = $HUD/PowerupBar/NukeButton/NukeLabel
 @onready var nuke_label = $HUD/PowerupBar/NukeButton/NukeStatus
+var brick_tooltip: Label = null
 
 var current_round: int = 1
 var score: int = 0
@@ -173,6 +174,12 @@ func _ready():
 	burn_button.pressed.connect(func(): toggle_powerup(ActivePowerup.BURN))
 	nuke_button.pressed.connect(_on_nuke_pressed)
 
+	# Hover tooltips for power-up buttons
+	explosive_button.tooltip_text = "Explosive Shot — Ball explodes on impact, dealing area damage to nearby bricks"
+	railgun_button.tooltip_text = "Railgun — High-speed piercing shot through multiple bricks. Halves boss HP"
+	burn_button.tooltip_text = "Burn Round — All balls apply burning damage over time to bricks hit"
+	nuke_button.tooltip_text = "Nuke — Destroys all bricks on screen (requires 1 nuke charge)"
+
 	load_high_score()
 
 	# Apply talent effects
@@ -219,6 +226,14 @@ func _ready():
 	else:
 		add_child(combo_bar)
 	combo_bar.draw.connect(_draw_combo_bar)
+
+	# Brick hover tooltip label
+	brick_tooltip = Label.new()
+	brick_tooltip.visible = false
+	brick_tooltip.z_index = 100
+	brick_tooltip.add_theme_color_override("font_color", Color.WHITE)
+	brick_tooltip.add_theme_font_size_override("font_size", 12)
+	add_child(brick_tooltip)
 
 	# Settings menu: instantiate on startup so it's available for the HUD GearButton
 	var settings_scene = preload("res://scenes/settings_menu.tscn")
@@ -2007,3 +2022,13 @@ func spawn_combo_text(combo: int):
 			combo_label.queue_free()
 			combo_label = null
 	)
+
+func show_brick_tooltip(text: String, pos: Vector2):
+	if brick_tooltip:
+		brick_tooltip.text = text
+		brick_tooltip.position = pos
+		brick_tooltip.visible = true
+
+func hide_brick_tooltip():
+	if brick_tooltip:
+		brick_tooltip.visible = false
