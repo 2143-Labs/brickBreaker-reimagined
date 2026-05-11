@@ -119,7 +119,7 @@ var ammo_multiplier: float = 1.0
 var next_round_damage_mult: float = 1.0
 var next_round_ammo_mult: float = 1.0
 # Powerup states
-enum ActivePowerup { NONE, EXPLOSIVE, RAILGUN, BURN, TRIPLE }
+enum ActivePowerup { NONE, EXPLOSIVE, RAILGUN, BURN }
 var active_powerup: int = ActivePowerup.NONE
 var explosive_cooldown: int = 0
 var explosive_cooldown_max: int = 4
@@ -127,8 +127,7 @@ var railgun_cooldown: int = 0
 var railgun_cooldown_max: int = 0  # disabled for testing — railgun has no cooldown
 var burn_cooldown: int = 0
 var burn_cooldown_max: int = 5
-var triple_cooldown: int = 0
-var triple_cooldown_max: int = 3
+var triple_shot_active: bool = false
 var nuke_charges: int = 2
 var burn_round_active: bool = false
 
@@ -176,11 +175,12 @@ func _ready():
 	burn_button.pressed.connect(func(): toggle_powerup(ActivePowerup.BURN))
 	nuke_button.pressed.connect(_on_nuke_pressed)
 
-	# TRIPLE shot button — created programmatically
+	# TRIPLE shot indicator — visible only when active (reward from boss)
 	triple_button = Button.new()
 	triple_button.text = "TRIPLE"
 	triple_button.add_theme_font_size_override("font_size", 11)
-	triple_button.pressed.connect(func(): toggle_powerup(ActivePowerup.TRIPLE))
+	triple_button.disabled = true
+	triple_button.visible = false
 	$HUD/PowerupBar.add_child(triple_button)
 	_style_powerup_card(triple_button, UITheme.CYAN, "ready")
 
@@ -402,7 +402,6 @@ func toggle_powerup(powerup: int):
 		ActivePowerup.EXPLOSIVE: launcher.set_type(1)
 		ActivePowerup.RAILGUN: launcher.set_type(2)
 		ActivePowerup.BURN: launcher.set_type(3)
-		ActivePowerup.TRIPLE: launcher.set_type(0)
 
 	update_launcher_type()
 
@@ -411,20 +410,17 @@ func get_cooldown(powerup: int) -> int:
 		ActivePowerup.EXPLOSIVE: return explosive_cooldown
 		ActivePowerup.RAILGUN: return railgun_cooldown
 		ActivePowerup.BURN: return burn_cooldown
-		ActivePowerup.TRIPLE: return triple_cooldown
 	return 0
 func set_cooldown(powerup: int):
 	match powerup:
 		ActivePowerup.EXPLOSIVE: explosive_cooldown = explosive_cooldown_max
 		ActivePowerup.RAILGUN: railgun_cooldown = railgun_cooldown_max
 		ActivePowerup.BURN: burn_cooldown = burn_cooldown_max
-		ActivePowerup.TRIPLE: triple_cooldown = triple_cooldown_max
 
 func tick_cooldowns():
 	if explosive_cooldown > 0: explosive_cooldown -= 1
 	if railgun_cooldown > 0: railgun_cooldown -= 1
 	if burn_cooldown > 0: burn_cooldown -= 1
-	if triple_cooldown > 0: triple_cooldown -= 1
 
 func _apply_hud_styling():
 	# Card backing for the level row
@@ -550,19 +546,14 @@ func update_all_powerup_ui():
 		_set_powerup_status(nuke_name_label, nuke_label, UITheme.ROSE, "off", "NO CHARGES")
 		nuke_button.disabled = true
 
-	# Triple (cyan)
-	if triple_cooldown > 0:
-		_style_powerup_card(triple_button, UITheme.CYAN, "cd")
-		triple_button.disabled = true
-		triple_button.text = "%d ROUNDS" % triple_cooldown
-	elif active_powerup == ActivePowerup.TRIPLE:
+	# Triple indicator — visible only when active
+	if triple_shot_active:
+		triple_button.visible = true
 		_style_powerup_card(triple_button, UITheme.CYAN, "armed")
-		triple_button.disabled = false
+		triple_button.disabled = true
 		triple_button.text = "TRIPLE"
 	else:
-		_style_powerup_card(triple_button, UITheme.CYAN, "ready")
-		triple_button.disabled = false
-		triple_button.text = "TRIPLE"
+		triple_button.visible = false
 
 func update_launcher_type():
 		match active_powerup:
@@ -572,7 +563,6 @@ func update_launcher_type():
 				launcher.set_type(1)  # BOMB
 			ActivePowerup.RAILGUN:
 				launcher.set_type(2)    # RAILGUN
-			ActivePowerup.TRIPLE: launcher.set_type(0)
 			ActivePowerup.BURN:
 				launcher.set_type(3)       # BURN
 func _on_nuke_pressed():
@@ -812,23 +802,7 @@ func start_firing():
 				update_launcher_type()
 				launcher.clear_aim()
 
-	# TRIPLE SHOT: fire 3 balls in spread pattern
-	if active_powerup == ActivePowerup.TRIPLE:
-		var center_dir = fire_direction
-		var spread_angle = deg_to_rad(15.0)
-		var angles = [-spread_angle, 0.0, spread_angle]
-		for a in angles:
-			if balls_to_spawn <= 0:
-				break
-			fire_direction = center_dir.rotated(a)
-			do_launch_ball()
-			balls_to_spawn -= 1
-		fire_direction = center_dir
-		set_cooldown(ActivePowerup.TRIPLE)
-		active_powerup = ActivePowerup.NONE
-		update_all_powerup_ui()
-		update_launcher_type()
-		launcher.clear_aim()
+	# TRIPLE SHOT: every ball in sequence fires 3 with spread
 
 	if balls_to_spawn > 0:
 		is_spawning = true
@@ -836,20 +810,30 @@ func start_firing():
 		end_round()
 
 func do_launch_ball():
-	sound_manager.play("launch")
+	if triple_shot_active:
+		var center_dir = fire_direction
+		var spread_angle = deg_to_rad(15.0)
+		for a in [-spread_angle, 0.0, spread_angle]:
+			_spawn_single_ball(center_dir.rotated(a), a == 0.0)  # only center ball fires magazine
+		sound_manager.play("launch")
+	else:
+		sound_manager.play("launch")
+		_spawn_single_ball(fire_direction, true)
+
+func _spawn_single_ball(dir: Vector2, fire_mag: bool = true):
 	var ball = BALL_SCENE.instantiate()
 	ball.position = launch_point
 	ball.speed = 800.0
 	ball.damage_multiplier = damage_multiplier * Progression.get_damage_multiplier()
 	ball.is_powered = (damage_multiplier > 1.0)
-	# If a burn round is active, this ball will apply burn stacks on hit
 	ball.applies_burn = burn_round_active
 	ball.ball_returned.connect(_on_ball_returned)
 	ball.ball_landed.connect(_on_ball_landed)
 	ball_container.add_child(ball)
-	ball.launch(fire_direction)
+	ball.launch(dir)
 	balls_in_play += 1
-	magazine.fire_ball()
+	if fire_mag:
+		magazine.fire_ball()
 
 # ---- EXPLOSION ----
 
