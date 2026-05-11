@@ -16,7 +16,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 config/name="Godot Bricker"
 run/main_scene="res://scenes/main_menu.tscn"
-config/features=PackedStringArray("4.6", "GL Compatibility")
+config/features=PackedStringArray("4.5", "GL Compatibility")
 
 [autoload]
 
@@ -41,4 +41,4 @@ pointing/emulate_touch_from_mouse=true
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
-environment/defaults/default_clear_color=Color(0.075, 0.090, 0.125, 1)
+environment/defaults/default_clear_color=Color(0.075, 0.09, 0.125, 1)

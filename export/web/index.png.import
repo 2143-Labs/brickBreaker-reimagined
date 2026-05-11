@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dcnsha3qhymql"
-path="res://.godot/imported/Godot Bricker.icon.png-ef896cc8193ff4befdc197b6cd156991.ctex"
+uid="uid://dmv1srblss0e"
+path="res://.godot/imported/index.png-c2d8175aa2006ac735a751c5803e019d.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://export/web/Godot Bricker.icon.png"
-dest_files=["res://.godot/imported/Godot Bricker.icon.png-ef896cc8193ff4befdc197b6cd156991.ctex"]
+source_file="res://export/web/index.png"
+dest_files=["res://.godot/imported/index.png-c2d8175aa2006ac735a751c5803e019d.ctex"]
 
 [params]
 

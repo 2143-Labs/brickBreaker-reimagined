@@ -10,6 +10,10 @@ var is_active: bool = true
 var launched: bool = false
 var is_powered: bool = false
 var applies_burn: bool = false
+# Seeing Double / mini-ball state
+var is_mini: bool = false
+var can_split: bool = true
+var collisions_remaining: int = -1  # -1 = unlimited (regular balls); minis use this counter
 
 # Stuck detection
 var wall_bounce_count: int = 0
@@ -126,3 +130,14 @@ func unstick():
 func launch(dir: Vector2):
 	direction = dir
 	launched = true
+
+func _fizzle() -> void:
+	is_active = false
+	# Quick shrink-out tween, then free
+	var tw = create_tween()
+	tw.tween_property(self, "modulate:a", 0.0, 0.15)
+	tw.tween_callback(func():
+		if is_instance_valid(self):
+			emit_signal("ball_returned")
+			queue_free()
+	)
