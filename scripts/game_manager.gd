@@ -60,11 +60,11 @@ var settings_menu: Node = null
 var triple_button: Button = null
 var boss_choice_container: Control = null
 
-var current_round: int = 49
+var current_round: int = 1
 var score: int = 0
 var pending_xp: int = 0
 var high_score: int = 0
-var ammo: int = 49
+var ammo: int = 1
 var bonus_ammo: int = 0
 var pending_ammo: int = 0
 var is_aiming: bool = false
@@ -95,7 +95,7 @@ var arena_top: float = 130.0
 var grid_cols: int = 7
 var cell_width: float = 52.0
 var cell_height: float = 38.0
-var max_rows: int = 9
+var max_rows: int = 10
 
 var grid_start_x: float
 var grid_start_y: float
@@ -111,7 +111,7 @@ var drop_duration: float = 0.25
 var dropping_bricks: Array = []
 var dropping_orbs: Array = []
 
-var death_row: int = 8
+var death_row: int = 9
 var shake_amount: float = 0.0
 var shake_decay: float = 8.0
 var original_position: Vector2 = Vector2.ZERO
@@ -1041,7 +1041,6 @@ func on_rainbow_brick_destroyed(pos: Vector2):
 	orb_container.add_child(pickup)
 
 func on_boss_killed(boss):
-	print("on_boss_killed: ", boss, " w=", boss.grid_width, " h=", boss.grid_height, " elite=", boss.is_elite, " mini=", boss.has_meta("is_mini_boss"), " final=", boss.is_final_boss)
 	var is_full_boss: bool = bool(boss.is_final_boss) or (not bool(boss.is_elite) and not boss.has_meta("is_mini_boss"))
 	if boss.is_final_boss:
 		spawn_modifier_popup("FINAL BOSS DEFEATED!", Color(1.0, 0.85, 0.2))

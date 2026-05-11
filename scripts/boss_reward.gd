@@ -1,5 +1,5 @@
 extends CanvasLayer
-# Boss reward popup â€” shown after a full boss kill (round 50, 100, 150, â€¦, final boss).
+# Boss reward popup — shown after a full boss kill (round 50, 100, 150, …, final boss).
 # Presents 3 randomized options from a gated pool. Awards on tap, auto-closes.
 
 signal reward_chosen(reward_id: String)
@@ -41,7 +41,7 @@ func show_for_manager(manager: Node) -> void:
 
 func _build_pool(manager: Node) -> Array:
     # Eligibility checks. Triple/Seeing/Super-X only offered if not already owned.
-    # Weapon supers gated to weapons the player has (currently all 4 â€” no equip system yet).
+    # Weapon supers gated to weapons the player has (currently all 4 — no equip system yet).
     var eligible: Array = []
     if not manager.has_triple_shot:
         eligible.append(Reward.TRIPLE_SHOT)
@@ -115,7 +115,7 @@ func _build_ui() -> void:
     subtitle.set_anchors_preset(Control.PRESET_TOP_WIDE)
     subtitle.offset_top = 232
     overlay.add_child(subtitle)
-    # 3 cards horizontally centered. Viewport = 390 wide. Card 110, gap 12 â†’ 110*3+12*2 = 354. Margin (390-354)/2 = 18.
+    # 3 cards horizontally centered. Viewport = 390 wide. Card 110, gap 12 → 110*3+12*2 = 354. Margin (390-354)/2 = 18.
     var card_w := 86
     var card_h := 130
     var gap := 22
