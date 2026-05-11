@@ -196,11 +196,11 @@ func _ready():
 	burn_button.pressed.connect(func(): toggle_powerup(ActivePowerup.BURN))
 	nuke_button.pressed.connect(_on_nuke_pressed)
 
-	# Hover tooltips for power-up buttons
-	explosive_button.tooltip_text = "Explosive Shot — Ball explodes on impact, dealing area damage to nearby bricks"
-	railgun_button.tooltip_text = "Railgun — High-speed piercing shot through multiple bricks. Halves boss HP"
-	burn_button.tooltip_text = "Burn Round — All balls apply burning damage over time to bricks hit"
-	nuke_button.tooltip_text = "Nuke — Destroys all bricks on screen (requires 1 nuke charge)"
+	# Hover tooltips for power-up buttons (shortened to prevent overflow)
+	explosive_button.tooltip_text = "Explodes on impact, damaging nearby bricks"
+	railgun_button.tooltip_text = "High-speed piercing shot through multiple bricks"
+	burn_button.tooltip_text = "All balls this round apply burn damage over time"
+	nuke_button.tooltip_text = "Destroy all bricks on screen (1 charge)"
 	# TRIPLE shot indicator — visible only when active (reward from boss)
 	triple_button = Button.new()
 	triple_button.text = "TRIPLE"
@@ -258,14 +258,22 @@ func _ready():
 	combo_bar.draw.connect(_draw_combo_bar)
 
 	# Brick hover tooltip label (on HUD CanvasLayer so it renders above bricks)
-	brick_tooltip = Label.new()
-	brick_tooltip.visible = false
-	brick_tooltip.add_theme_color_override("font_color", Color.WHITE)
-	brick_tooltip.add_theme_font_size_override("font_size", 12)
-	if $HUD:
-		$HUD.add_child(brick_tooltip)
-	else:
-		add_child(brick_tooltip)
+    brick_tooltip = Label.new()
+    brick_tooltip.visible = false
+    brick_tooltip.add_theme_color_override("font_color", Color.WHITE)
+    brick_tooltip.add_theme_font_size_override("font_size", 11)
+    brick_tooltip.autowrap_mode = TextServer.AUTOWRAP_WORD
+    brick_tooltip.custom_minimum_size = Vector2(180, 0)
+    # Dark background for readability
+    var bg = ColorRect.new()
+    bg.color = Color(0, 0, 0, 0.75)
+    bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    brick_tooltip.add_child(bg)
+    bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 4)
+    if $HUD:
+        $HUD.add_child(brick_tooltip)
+    else:
+        add_child(brick_tooltip)
 
 	# Settings menu: instantiate on startup so it's available for the HUD GearButton
 	var settings_scene = preload("res://scenes/settings_menu.tscn")
