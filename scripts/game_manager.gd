@@ -57,6 +57,7 @@ var settings_menu: Node = null
 @onready var nuke_name_label = $HUD/PowerupBar/NukeButton/NukeLabel
 @onready var nuke_label = $HUD/PowerupBar/NukeButton/NukeStatus
 var triple_button: Button = null
+var boss_choice_container: Control = null
 
 var current_round: int = 1
 var score: int = 0
@@ -633,7 +634,7 @@ func update_ammo_label_position():
 	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 
 func _input(event):
-	if is_firing or not game_active or is_sliding or is_dropping:
+	if is_firing or not game_active or is_sliding or is_dropping or (boss_choice_container and is_instance_valid(boss_choice_container)):
 		return
 	if event is InputEventMouseButton or event is InputEventScreenTouch:
 		var pressed = event.pressed
@@ -1004,18 +1005,117 @@ func on_boss_killed(boss):
 		spawn_modifier_popup("FINAL BOSS DEFEATED!", Color(1.0, 0.85, 0.2))
 	elif boss.is_elite:
 		active_elites -= 1
-		# Drop a random powerup (0 or 1)
 		var pickup = PICKUP_SCENE.instantiate()
 		pickup.position = boss.global_position
 		pickup.pickup_type = randi_range(0, 1)
 		orb_container.add_child(pickup)
 		spawn_modifier_popup("ELITE DEFEATED!", Color(0.6, 0.3, 0.9))
-	# Track killed boss rounds for elite system
+	else:
+		# Regular boss: offer choice of 3 rewards
+		_show_boss_reward_choices()
 	for round_num in boss_schedule.keys():
 		var info = boss_schedule[round_num]
 		if boss.grid_width == info["w"] and boss.grid_height == info["h"]:
 			if round_num not in bosses_killed:
 				bosses_killed.append(round_num)
+
+func _show_boss_reward_choices():
+	if boss_choice_container and is_instance_valid(boss_choice_container):
+		return  # already showing
+	boss_choice_container = Control.new()
+	boss_choice_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	boss_choice_container.z_index = 200
+	$HUD.add_child(boss_choice_container)
+
+	# Dark backdrop
+	var backdrop = ColorRect.new()
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.color = Color(0, 0, 0, 0.5)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	boss_choice_container.add_child(backdrop)
+
+	# Title
+	var title = Label.new()
+	title.text = "BOSS DEFEATED!"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.position = Vector2(60, 120)
+	title.size = Vector2(270, 30)
+	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	boss_choice_container.add_child(title)
+
+	var subtitle = Label.new()
+	subtitle.text = "Choose your reward:"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.position = Vector2(60, 155)
+	subtitle.size = Vector2(270, 20)
+	subtitle.add_theme_font_size_override("font_size", 14)
+	subtitle.add_theme_color_override("font_color", UITheme.TEXT_MUTE)
+	boss_choice_container.add_child(subtitle)
+
+	# Build 3 choice buttons
+	var choices = _build_boss_choice_list()
+	var y_start = 190
+	for i in range(choices.size()):
+		var ch = choices[i]
+		var btn = Button.new()
+		btn.text = ch["label"]
+		btn.position = Vector2(80, y_start + i * 55)
+		btn.size = Vector2(230, 45)
+		btn.add_theme_font_size_override("font_size", 13)
+		var sb = UITheme.make_card(UITheme.BG_CARD, UITheme.LINE, UITheme.R_MD)
+		sb.set_content_margin_all(8)
+		btn.add_theme_stylebox_override("normal", sb)
+		var sb_h = sb.duplicate()
+		sb_h.bg_color = UITheme.BG_CARDHI
+		btn.add_theme_stylebox_override("hover", sb_h)
+		var reward_key = ch["action"]
+		btn.pressed.connect(func():
+			_apply_boss_reward(reward_key)
+			_hide_boss_reward_choices()
+		)
+		boss_choice_container.add_child(btn)
+
+func _build_boss_choice_list() -> Array:
+	var choices = []
+	if not triple_shot_active:
+		choices.append({"label": "☄ Triple Shot — Fire 3 balls per ammo", "action": "triple"})
+	choices.append({"label": "⚡ 2x Damage next round", "action": "dmg"})
+	choices.append({"label": "☢ Extra Nuke Charge", "action": "nuke"})
+	# If triple already active, replace with another option
+	if triple_shot_active:
+		choices.append({"label": "💚 2x Ammo next round", "action": "ammo"})
+	# Ensure exactly 3 choices
+	while choices.size() < 3:
+		choices.append({"label": "⚡ 2x Damage next round + 💚 2x Ammo", "action": "both"})
+		break
+	choices.shuffle()
+	return choices.slice(0, 3)
+
+func _apply_boss_reward(action: String):
+	match action:
+		"triple":
+			triple_shot_active = true
+			spawn_modifier_popup("TRIPLE SHOT!", Color(0.3, 0.9, 1.0))
+		"dmg":
+			next_round_damage_mult = 2.0
+			spawn_modifier_popup("2x DMG NEXT!", Color(0.85, 0.25, 0.2))
+		"nuke":
+			nuke_charges += 1
+			spawn_modifier_popup("NUKE CHARGE!", Color(1.0, 0.9, 0.2))
+		"ammo":
+			next_round_ammo_mult = 2.0
+			spawn_modifier_popup("2x AMMO NEXT!", Color(0.9, 0.65, 0.15))
+		"both":
+			next_round_damage_mult = 2.0
+			next_round_ammo_mult = 2.0
+			spawn_modifier_popup("2x DMG + AMMO!", Color(1.0, 0.7, 0.2))
+	update_all_powerup_ui()
+
+func _hide_boss_reward_choices():
+	if boss_choice_container and is_instance_valid(boss_choice_container):
+		boss_choice_container.queue_free()
+		boss_choice_container = null
 
 # ---- ROUND MANAGEMENT ----
 
