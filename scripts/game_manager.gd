@@ -15,6 +15,7 @@ const DIAGONAL_BRICK_SCENE = preload("res://scenes/diagonal_brick.tscn")
 const BOARD_CLEAR_SHADER = preload("res://assets/shaders/board_clear.gdshader")
 const OIL_BARREL_SCENE = preload("res://scenes/oil_barrel.tscn")
 const PICKUP_SCENE = preload("res://scenes/pickup.tscn")
+const BOSS_REWARD_SCRIPT = preload("res://scripts/boss_reward.gd")
 const SAVE_PATH = "user://highscore.save"
 
 @onready var brick_container = $BrickContainer
@@ -59,11 +60,11 @@ var settings_menu: Node = null
 var triple_button: Button = null
 var boss_choice_container: Control = null
 
-var current_round: int = 1
+var current_round: int = 49
 var score: int = 0
 var pending_xp: int = 0
 var high_score: int = 0
-var ammo: int = 1
+var ammo: int = 49
 var bonus_ammo: int = 0
 var pending_ammo: int = 0
 var is_aiming: bool = false
@@ -94,7 +95,7 @@ var arena_top: float = 130.0
 var grid_cols: int = 7
 var cell_width: float = 52.0
 var cell_height: float = 38.0
-var max_rows: int = 10
+var max_rows: int = 9
 
 var grid_start_x: float
 var grid_start_y: float
@@ -110,7 +111,7 @@ var drop_duration: float = 0.25
 var dropping_bricks: Array = []
 var dropping_orbs: Array = []
 
-var death_row: int = 9
+var death_row: int = 8
 var shake_amount: float = 0.0
 var shake_decay: float = 8.0
 var original_position: Vector2 = Vector2.ZERO
@@ -128,9 +129,27 @@ var railgun_cooldown: int = 0
 var railgun_cooldown_max: int = 0  # disabled for testing — railgun has no cooldown
 var burn_cooldown: int = 0
 var burn_cooldown_max: int = 5
-var triple_shot_active: bool = false
 var nuke_charges: int = 2
 var burn_round_active: bool = false
+var boss_reward_open: bool = false
+var _pending_round_spawn: bool = false
+var _bricks_hit_this_round: int = 0
+var _first_ball_land_msec: int = -1
+var _miss_fade_started: bool = false
+const MISS_FADE_GRACE_MSEC: int = 1000
+const MISS_FADE_DURATION: float = 0.4
+
+# Super weapon upgrades (acquired from boss rewards)
+var super_bomb: bool = false
+var super_railgun: bool = false
+var super_burn: bool = false
+var super_nuke: bool = false
+
+# Permanent ball powers (acquired from boss rewards)
+var has_triple_shot: bool = false
+var has_seeing_double: bool = false
+# Railgun chain kill tracking
+var _railgun_kill_positions: Array = []
 
 # Boss system
 var boss_schedule = {
@@ -318,6 +337,8 @@ func refresh_draw():
 	queue_redraw()
 
 func _physics_process(delta):
+	_check_ball_killbox()
+	_check_miss_fade()
 	if shake_amount > 0.1:
 		shake_amount = lerp(shake_amount, 0.0, shake_decay * delta)
 		position = original_position + Vector2(randf_range(-shake_amount, shake_amount), randf_range(-shake_amount, shake_amount))
@@ -494,7 +515,26 @@ func update_powerup_button(button: Button, label: Label, cd: int, is_active: boo
 	# Legacy signature kept for compatibility; routed through the new card styling.
 	pass
 
+func _apply_super_labels() -> void:
+	var red := Color(1.0, 0.30, 0.32)  # punchy red, distinct from ROSE accent
+	# BOMB
+	if explosive_name_label:
+		explosive_name_label.text = "SUPER BOMB" if super_bomb else "BOMB"
+		explosive_name_label.add_theme_color_override("font_color", red if super_bomb else UITheme.TEXT)
+	# RAILGUN
+	if railgun_name_label:
+		railgun_name_label.text = "SUPER RAIL" if super_railgun else "RAILGUN"
+		railgun_name_label.add_theme_color_override("font_color", red if super_railgun else UITheme.TEXT)
+	# BURN
+	if burn_name_label:
+		burn_name_label.text = "SUPER BURN" if super_burn else "BURN"
+		burn_name_label.add_theme_color_override("font_color", red if super_burn else UITheme.TEXT)
+	# NUKE
+	if nuke_name_label:
+		nuke_name_label.text = "SUPER NUKE" if super_nuke else "NUKE"
+		nuke_name_label.add_theme_color_override("font_color", red if super_nuke else UITheme.TEXT)
 func update_all_powerup_ui():
+	_apply_super_labels()
 	# Explosive (lime)
 	if explosive_cooldown > 0:
 		_style_powerup_card(explosive_button, UITheme.LIME, "cd")
@@ -548,7 +588,7 @@ func update_all_powerup_ui():
 		nuke_button.disabled = true
 
 	# Triple indicator — visible only when active
-	if triple_shot_active:
+	if has_triple_shot:
 		triple_button.visible = true
 		_style_powerup_card(triple_button, UITheme.CYAN, "armed")
 		triple_button.disabled = true
@@ -811,7 +851,7 @@ func start_firing():
 		end_round()
 
 func do_launch_ball():
-	if triple_shot_active:
+	if has_triple_shot:
 		var center_dir = fire_direction
 		var spread_angle = deg_to_rad(15.0)
 		for a in [-spread_angle, 0.0, spread_angle]:
@@ -1001,6 +1041,8 @@ func on_rainbow_brick_destroyed(pos: Vector2):
 	orb_container.add_child(pickup)
 
 func on_boss_killed(boss):
+	print("on_boss_killed: ", boss, " w=", boss.grid_width, " h=", boss.grid_height, " elite=", boss.is_elite, " mini=", boss.has_meta("is_mini_boss"), " final=", boss.is_final_boss)
+	var is_full_boss: bool = bool(boss.is_final_boss) or (not bool(boss.is_elite) and not boss.has_meta("is_mini_boss"))
 	if boss.is_final_boss:
 		spawn_modifier_popup("FINAL BOSS DEFEATED!", Color(1.0, 0.85, 0.2))
 	elif boss.is_elite:
@@ -1010,14 +1052,96 @@ func on_boss_killed(boss):
 		pickup.pickup_type = randi_range(0, 1)
 		orb_container.add_child(pickup)
 		spawn_modifier_popup("ELITE DEFEATED!", Color(0.6, 0.3, 0.9))
-	else:
-		# Regular boss: offer choice of 3 rewards
-		_show_boss_reward_choices()
+	elif boss.has_meta("is_mini_boss"):
+		spawn_blue_ammo_orb(boss.global_position)
+		spawn_modifier_popup("MINI BOSS DOWN! +5 AMMO", Color(0.18, 0.40, 0.85))
+	# Track killed boss rounds for elite system
 	for round_num in boss_schedule.keys():
 		var info = boss_schedule[round_num]
 		if boss.grid_width == info["w"] and boss.grid_height == info["h"]:
 			if round_num not in bosses_killed:
 				bosses_killed.append(round_num)
+	if is_full_boss:
+		show_boss_reward_popup()
+
+func resume_round_after_reward():
+	boss_reward_open = false
+	if _pending_round_spawn:
+		_pending_round_spawn = false
+		spawn_round_content()
+		start_slide_existing()
+
+func show_boss_reward_popup():
+	if boss_reward_open or _pending_round_spawn:
+		return
+	for c in get_children():
+		if c.get_script() == BOSS_REWARD_SCRIPT:
+			return
+	var popup = BOSS_REWARD_SCRIPT.new()
+	add_child(popup)
+	popup.show_for_manager(self)
+
+# Killbox bounds — generous margins outside the 390x844 viewport.
+# Any ball whose position exits these is force-returned (no x_pos update).
+const KILLBOX_MIN = Vector2(-60, -60)
+const KILLBOX_MAX = Vector2(450, 920)
+
+func _any_brick_damaged() -> bool:
+	for b in brick_container.get_children():
+		if "health" in b and "max_health" in b and b.health < b.max_health:
+			return true
+	if _bricks_hit_this_round > 0:
+		return true
+	return false
+
+func _check_miss_fade() -> void:
+	if not is_firing or _miss_fade_started:
+		return
+	# Find balls. Need at least one ball that has landed (no longer in play) to start the timer.
+	var balls = get_tree().get_nodes_in_group("balls")
+	var any_landed := balls.size() < balls_to_spawn  # crude: spawned more than currently exist
+	if balls_in_play <= 0 and balls.size() == 0:
+		return  # round already ending normally
+	if _any_brick_damaged():
+		_first_ball_land_msec = -1
+		return
+	if any_landed and _first_ball_land_msec < 0:
+		_first_ball_land_msec = Time.get_ticks_msec()
+	if _first_ball_land_msec > 0 and Time.get_ticks_msec() - _first_ball_land_msec > MISS_FADE_GRACE_MSEC:
+		_start_miss_fade(balls)
+
+func _start_miss_fade(balls: Array) -> void:
+	_miss_fade_started = true
+	# Halt the spawn pipeline so no more balls leave the chamber
+	is_spawning = false
+	balls_to_spawn = 0
+	spawn_distance_accumulator = 0.0
+	is_firing = false
+	for ball in balls:
+		if not is_instance_valid(ball):
+			continue
+		if "is_active" in ball:
+			ball.is_active = false
+		var tw = create_tween()
+		tw.tween_property(ball, "modulate:a", 0.0, MISS_FADE_DURATION)
+		tw.tween_callback(func():
+			if is_instance_valid(ball):
+				if ball.has_signal("ball_returned"):
+					ball.emit_signal("ball_returned")
+				ball.queue_free()
+		)
+
+func _check_ball_killbox() -> void:
+	for ball in get_tree().get_nodes_in_group("balls"):
+		if not is_instance_valid(ball):
+			continue
+		var p: Vector2 = ball.global_position
+		if p.x < KILLBOX_MIN.x or p.x > KILLBOX_MAX.x or p.y < KILLBOX_MIN.y or p.y > KILLBOX_MAX.y:
+			if "is_active" in ball:
+				ball.is_active = false
+			if ball.has_signal("ball_returned"):
+				ball.emit_signal("ball_returned")
+			ball.queue_free()
 
 func _show_boss_reward_choices():
 	if boss_choice_container and is_instance_valid(boss_choice_container):
@@ -1078,12 +1202,12 @@ func _show_boss_reward_choices():
 
 func _build_boss_choice_list() -> Array:
 	var choices = []
-	if not triple_shot_active:
+	if not has_triple_shot:
 		choices.append({"label": "☄ Triple Shot — Fire 3 balls per ammo", "action": "triple"})
 	choices.append({"label": "⚡ 2x Damage next round", "action": "dmg"})
 	choices.append({"label": "☢ Extra Nuke Charge", "action": "nuke"})
 	# If triple already active, replace with another option
-	if triple_shot_active:
+	if has_triple_shot:
 		choices.append({"label": "💚 2x Ammo next round", "action": "ammo"})
 	# Ensure exactly 3 choices
 	while choices.size() < 3:
@@ -1095,7 +1219,7 @@ func _build_boss_choice_list() -> Array:
 func _apply_boss_reward(action: String):
 	match action:
 		"triple":
-			triple_shot_active = true
+			has_triple_shot = true
 			spawn_modifier_popup("TRIPLE SHOT!", Color(0.3, 0.9, 1.0))
 		"dmg":
 			next_round_damage_mult = 2.0
@@ -1174,6 +1298,9 @@ func on_railgun_death_finished():
 
 func end_round():
 	is_firing = false
+	_first_ball_land_msec = -1
+	_miss_fade_started = false
+	_bricks_hit_this_round = 0
 	board_clear_played = false
 	current_round += 1
 	launch_point.x = next_launch_x
@@ -1247,8 +1374,61 @@ func end_round():
 	if preview_ball:
 		preview_ball.visible = false
 	update_launcher_type()
-	spawn_round_content()
-	start_slide_existing()
+	if boss_reward_open:
+		_pending_round_spawn = true
+	else:
+		spawn_round_content()
+		start_slide_existing()
+
+func try_spawn_boss():
+	if current_round % 25 != 0:
+		return
+	var boss_tier = current_round / 25
+	if boss_tier % 2 == 1:
+		spawn_mini_boss()
+	else:
+		var info = get_boss_info_for_tier(boss_tier)
+		if info:
+			spawn_boss(info)
+
+func spawn_mini_boss():
+	var boss = BOSS_BRICK_SCENE.instantiate()
+	boss.grid_width = 2
+	boss.grid_height = 2
+	boss.health = current_round
+	boss.max_health = current_round
+	boss.is_elite = false
+	boss.has_shield = false
+	boss.set_meta("is_mini_boss", true)
+	var occupied = get_occupied_cells()
+	var max_col = grid_cols - 2
+	var col = randi_range(0, max(0, max_col))
+	var attempts = 0
+	while (Vector2(col, 0) in occupied or Vector2(col + 1, 0) in occupied) and attempts < 20:
+		col = randi_range(0, max(0, max_col))
+		attempts += 1
+	var x = grid_start_x + col * cell_width + cell_width / 2.0
+	var y = grid_start_y + cell_height / 2.0
+	boss.position = Vector2(x, y)
+	brick_container.add_child(boss)
+func get_boss_info_for_tier(tier: int) -> Dictionary:
+	match tier:
+		2: return {"w": 2, "h": 3, "shield": 0}
+		4: return {"w": 3, "h": 3, "shield": 10}
+		6: return {"w": 3, "h": 4, "shield": 25}
+		8: return {"w": 4, "h": 4, "shield": 50}
+	if tier >= 12:
+		var iteration = (tier - 12) / 2
+		return {"w": 7, "h": 2, "shield": 50, "is_final": true, "health_override": 1000 + iteration * 500, "guardians": true, "moves_every_other": true}
+	return {"w": 4, "h": 4, "shield": 50}
+
+func spawn_blue_ammo_orb(pos: Vector2):
+	var orb = AMMO_ORB_SCENE.instantiate()
+	orb.position = pos
+	orb.ammo_value = 5
+	orb.is_blue = true
+	orb_container.add_child(orb)
+	sound_manager.play_orb() if sound_manager and sound_manager.has_method("play_orb") else null
 
 func spawn_guardians_if_needed():
 	for brick in brick_container.get_children():
@@ -1347,10 +1527,6 @@ func try_spawn_special_bricks():
 			barrel.position = Vector2(grid_start_x + col * cell_width, grid_start_y)
 			brick_container.add_child(barrel)
 
-func try_spawn_boss():
-	var boss_info = get_boss_info(current_round)
-	if boss_info:
-		spawn_boss(boss_info)
 
 func get_boss_info(round_num: int) -> Variant:
 	if boss_schedule.has(round_num):
@@ -1658,6 +1834,9 @@ func spawn_ammo_orbs_at_row0() -> Array:
 	var spawned = []
 	if not game_active:
 		return spawned
+	# Ammo rebalance: 50% skip chance after first mini boss (round 25)
+	if current_round > 25 and randf() > 0.5:
+		return spawned
 	var occupied = get_occupied_cells()
 	var available = []
 	for c in range(grid_cols):
@@ -1830,8 +2009,8 @@ func update_hud():
 			$HUD.get_node("SPLabel").add_theme_color_override("font_color", UITheme.TEXT_MUTE)
 		$HUD.get_node("SPLabel").text = "%d" % Progression.skill_points
 
-func collect_ammo_orb():
-	pending_ammo += 1
+func collect_ammo_orb(value: int = 1):
+	pending_ammo += value
 	sound_manager.play_orb()
 func save_high_score():
 	var file = FileAccess.open(SAVE_PATH, FileAccess.WRITE)

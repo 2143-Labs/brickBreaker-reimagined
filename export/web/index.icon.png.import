@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dih3y6mvh521t"
-path="res://.godot/imported/Godot Bricker.apple-touch-icon.png-b1df71840d89fb44f3131ff2343b1869.ctex"
+uid="uid://b48tpblt6mpl0"
+path="res://.godot/imported/index.icon.png-71c9d3338695ba24c45c706011eaad77.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://export/web/Godot Bricker.apple-touch-icon.png"
-dest_files=["res://.godot/imported/Godot Bricker.apple-touch-icon.png-b1df71840d89fb44f3131ff2343b1869.ctex"]
+source_file="res://export/web/index.icon.png"
+dest_files=["res://.godot/imported/index.icon.png-71c9d3338695ba24c45c706011eaad77.ctex"]
 
 [params]
 
