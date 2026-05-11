@@ -57,12 +57,14 @@ var settings_menu: Node = null
 @onready var nuke_button = $HUD/PowerupBar/NukeButton
 @onready var nuke_name_label = $HUD/PowerupBar/NukeButton/NukeLabel
 @onready var nuke_label = $HUD/PowerupBar/NukeButton/NukeStatus
+var triple_button: Button = null
+var boss_choice_container: Control = null
 
-var current_round: int = 49
+var current_round: int = 1
 var score: int = 0
 var pending_xp: int = 0
 var high_score: int = 0
-var ammo: int = 49
+var ammo: int = 1
 var bonus_ammo: int = 0
 var pending_ammo: int = 0
 var is_aiming: bool = false
@@ -93,7 +95,7 @@ var arena_top: float = 130.0
 var grid_cols: int = 7
 var cell_width: float = 52.0
 var cell_height: float = 38.0
-var max_rows: int = 9
+var max_rows: int = 10
 
 var grid_start_x: float
 var grid_start_y: float
@@ -109,7 +111,7 @@ var drop_duration: float = 0.25
 var dropping_bricks: Array = []
 var dropping_orbs: Array = []
 
-var death_row: int = 8
+var death_row: int = 9
 var shake_amount: float = 0.0
 var shake_decay: float = 8.0
 var original_position: Vector2 = Vector2.ZERO
@@ -192,6 +194,15 @@ func _ready():
 	railgun_button.pressed.connect(func(): toggle_powerup(ActivePowerup.RAILGUN))
 	burn_button.pressed.connect(func(): toggle_powerup(ActivePowerup.BURN))
 	nuke_button.pressed.connect(_on_nuke_pressed)
+
+	# TRIPLE shot indicator — visible only when active (reward from boss)
+	triple_button = Button.new()
+	triple_button.text = "TRIPLE"
+	triple_button.add_theme_font_size_override("font_size", 11)
+	triple_button.disabled = true
+	triple_button.visible = false
+	$HUD/PowerupBar.add_child(triple_button)
+	_style_powerup_card(triple_button, UITheme.CYAN, "ready")
 
 	load_high_score()
 
@@ -576,6 +587,15 @@ func update_all_powerup_ui():
 		_set_powerup_status(nuke_name_label, nuke_label, UITheme.ROSE, "off", "NO CHARGES")
 		nuke_button.disabled = true
 
+	# Triple indicator — visible only when active
+	if has_triple_shot:
+		triple_button.visible = true
+		_style_powerup_card(triple_button, UITheme.CYAN, "armed")
+		triple_button.disabled = true
+		triple_button.text = "TRIPLE"
+	else:
+		triple_button.visible = false
+
 func update_launcher_type():
 		match active_powerup:
 			ActivePowerup.NONE:
@@ -654,7 +674,7 @@ func update_ammo_label_position():
 	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 
 func _input(event):
-	if is_firing or not game_active or is_sliding or is_dropping:
+	if is_firing or not game_active or is_sliding or is_dropping or (boss_choice_container and is_instance_valid(boss_choice_container)):
 		return
 	if event is InputEventMouseButton or event is InputEventScreenTouch:
 		var pressed = event.pressed
@@ -823,26 +843,38 @@ func start_firing():
 				update_launcher_type()
 				launcher.clear_aim()
 
+	# TRIPLE SHOT: every ball in sequence fires 3 with spread
+
 	if balls_to_spawn > 0:
 		is_spawning = true
 	elif balls_in_play == 0:
 		end_round()
 
 func do_launch_ball():
-	sound_manager.play("launch")
+	if has_triple_shot:
+		var center_dir = fire_direction
+		var spread_angle = deg_to_rad(15.0)
+		for a in [-spread_angle, 0.0, spread_angle]:
+			_spawn_single_ball(center_dir.rotated(a), a == 0.0)  # only center ball fires magazine
+		sound_manager.play("launch")
+	else:
+		sound_manager.play("launch")
+		_spawn_single_ball(fire_direction, true)
+
+func _spawn_single_ball(dir: Vector2, fire_mag: bool = true):
 	var ball = BALL_SCENE.instantiate()
 	ball.position = launch_point
 	ball.speed = 800.0
 	ball.damage_multiplier = damage_multiplier * Progression.get_damage_multiplier()
 	ball.is_powered = (damage_multiplier > 1.0)
-	# If a burn round is active, this ball will apply burn stacks on hit
 	ball.applies_burn = burn_round_active
 	ball.ball_returned.connect(_on_ball_returned)
 	ball.ball_landed.connect(_on_ball_landed)
 	ball_container.add_child(ball)
-	ball.launch(fire_direction)
+	ball.launch(dir)
 	balls_in_play += 1
-	magazine.fire_ball()
+	if fire_mag:
+		magazine.fire_ball()
 
 # ---- EXPLOSION ----
 
@@ -1009,13 +1041,11 @@ func on_rainbow_brick_destroyed(pos: Vector2):
 	orb_container.add_child(pickup)
 
 func on_boss_killed(boss):
-	print("on_boss_killed: ", boss, " w=", boss.grid_width, " h=", boss.grid_height, " elite=", boss.is_elite, " mini=", boss.has_meta("is_mini_boss"), " final=", boss.is_final_boss)
 	var is_full_boss: bool = bool(boss.is_final_boss) or (not bool(boss.is_elite) and not boss.has_meta("is_mini_boss"))
 	if boss.is_final_boss:
 		spawn_modifier_popup("FINAL BOSS DEFEATED!", Color(1.0, 0.85, 0.2))
 	elif boss.is_elite:
 		active_elites -= 1
-		# Drop a random powerup (0 or 1)
 		var pickup = PICKUP_SCENE.instantiate()
 		pickup.position = boss.global_position
 		pickup.pickup_type = randi_range(0, 1)
@@ -1111,6 +1141,104 @@ func _check_ball_killbox() -> void:
 			if ball.has_signal("ball_returned"):
 				ball.emit_signal("ball_returned")
 			ball.queue_free()
+
+func _show_boss_reward_choices():
+	if boss_choice_container and is_instance_valid(boss_choice_container):
+		return  # already showing
+	boss_choice_container = Control.new()
+	boss_choice_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	boss_choice_container.z_index = 200
+	$HUD.add_child(boss_choice_container)
+
+	# Dark backdrop
+	var backdrop = ColorRect.new()
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.color = Color(0, 0, 0, 0.5)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	boss_choice_container.add_child(backdrop)
+
+	# Title
+	var title = Label.new()
+	title.text = "BOSS DEFEATED!"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.position = Vector2(60, 120)
+	title.size = Vector2(270, 30)
+	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	boss_choice_container.add_child(title)
+
+	var subtitle = Label.new()
+	subtitle.text = "Choose your reward:"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.position = Vector2(60, 155)
+	subtitle.size = Vector2(270, 20)
+	subtitle.add_theme_font_size_override("font_size", 14)
+	subtitle.add_theme_color_override("font_color", UITheme.TEXT_MUTE)
+	boss_choice_container.add_child(subtitle)
+
+	# Build 3 choice buttons
+	var choices = _build_boss_choice_list()
+	var y_start = 190
+	for i in range(choices.size()):
+		var ch = choices[i]
+		var btn = Button.new()
+		btn.text = ch["label"]
+		btn.position = Vector2(80, y_start + i * 55)
+		btn.size = Vector2(230, 45)
+		btn.add_theme_font_size_override("font_size", 13)
+		var sb = UITheme.make_card(UITheme.BG_CARD, UITheme.LINE, UITheme.R_MD)
+		sb.set_content_margin_all(8)
+		btn.add_theme_stylebox_override("normal", sb)
+		var sb_h = sb.duplicate()
+		sb_h.bg_color = UITheme.BG_CARDHI
+		btn.add_theme_stylebox_override("hover", sb_h)
+		var reward_key = ch["action"]
+		btn.pressed.connect(func():
+			_apply_boss_reward(reward_key)
+			_hide_boss_reward_choices()
+		)
+		boss_choice_container.add_child(btn)
+
+func _build_boss_choice_list() -> Array:
+	var choices = []
+	if not has_triple_shot:
+		choices.append({"label": "☄ Triple Shot — Fire 3 balls per ammo", "action": "triple"})
+	choices.append({"label": "⚡ 2x Damage next round", "action": "dmg"})
+	choices.append({"label": "☢ Extra Nuke Charge", "action": "nuke"})
+	# If triple already active, replace with another option
+	if has_triple_shot:
+		choices.append({"label": "💚 2x Ammo next round", "action": "ammo"})
+	# Ensure exactly 3 choices
+	while choices.size() < 3:
+		choices.append({"label": "⚡ 2x Damage next round + 💚 2x Ammo", "action": "both"})
+		break
+	choices.shuffle()
+	return choices.slice(0, 3)
+
+func _apply_boss_reward(action: String):
+	match action:
+		"triple":
+			has_triple_shot = true
+			spawn_modifier_popup("TRIPLE SHOT!", Color(0.3, 0.9, 1.0))
+		"dmg":
+			next_round_damage_mult = 2.0
+			spawn_modifier_popup("2x DMG NEXT!", Color(0.85, 0.25, 0.2))
+		"nuke":
+			nuke_charges += 1
+			spawn_modifier_popup("NUKE CHARGE!", Color(1.0, 0.9, 0.2))
+		"ammo":
+			next_round_ammo_mult = 2.0
+			spawn_modifier_popup("2x AMMO NEXT!", Color(0.9, 0.65, 0.15))
+		"both":
+			next_round_damage_mult = 2.0
+			next_round_ammo_mult = 2.0
+			spawn_modifier_popup("2x DMG + AMMO!", Color(1.0, 0.7, 0.2))
+	update_all_powerup_ui()
+
+func _hide_boss_reward_choices():
+	if boss_choice_container and is_instance_valid(boss_choice_container):
+		boss_choice_container.queue_free()
+		boss_choice_container = null
 
 # ---- ROUND MANAGEMENT ----
 
