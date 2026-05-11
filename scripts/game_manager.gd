@@ -257,15 +257,15 @@ func _ready():
 		add_child(combo_bar)
 	combo_bar.draw.connect(_draw_combo_bar)
 
-    # Brick hover tooltip label (on HUD CanvasLayer so it renders above bricks)
-    brick_tooltip = Label.new()
-    brick_tooltip.visible = false
-    brick_tooltip.add_theme_color_override("font_color", Color.WHITE)
-    brick_tooltip.add_theme_font_size_override("font_size", 12)
-    if $HUD:
-        $HUD.add_child(brick_tooltip)
-    else:
-        add_child(brick_tooltip)
+	# Brick hover tooltip label (on HUD CanvasLayer so it renders above bricks)
+	brick_tooltip = Label.new()
+	brick_tooltip.visible = false
+	brick_tooltip.add_theme_color_override("font_color", Color.WHITE)
+	brick_tooltip.add_theme_font_size_override("font_size", 12)
+	if $HUD:
+		$HUD.add_child(brick_tooltip)
+	else:
+		add_child(brick_tooltip)
 
 	# Settings menu: instantiate on startup so it's available for the HUD GearButton
 	var settings_scene = preload("res://scenes/settings_menu.tscn")
