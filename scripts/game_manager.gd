@@ -66,6 +66,7 @@ var pending_xp: int = 0
 var high_score: int = 0
 var ammo: int = 1
 var bonus_ammo: int = 0
+const MAX_BONUS_AMMO: int = 50
 var pending_ammo: int = 0
 var is_aiming: bool = false
 var last_aim_pos: Vector2 = Vector2.ZERO
@@ -1365,7 +1366,7 @@ func end_round():
 	if pending_ammo > 0:
 		for i in range(pending_ammo):
 			magazine.add_ball_plop()
-		bonus_ammo += pending_ammo
+		bonus_ammo = min(bonus_ammo + pending_ammo, MAX_BONUS_AMMO)
 		spawn_ammo_popup(pending_ammo)
 		pending_ammo = 0
 

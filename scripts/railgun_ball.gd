@@ -8,6 +8,7 @@ var is_active: bool = true
 var launched: bool = false
 
 var beam_points: Array = []
+const MAX_BEAM_POINTS: int = 500
 var bounces_remaining: int = 0
 
 # Wall bounds (match arena)
@@ -57,7 +58,8 @@ func _physics_process(delta):
 			spawn_wall_spark(Vector2(new_pos.x, wall_top))
 
 	position = new_pos
-	beam_points.append(position)
+	if beam_points.size() < MAX_BEAM_POINTS:
+		beam_points.append(position)
 
 	# Check brick hits
 	var manager = get_tree().get_first_node_in_group("game_manager")
@@ -113,7 +115,8 @@ func _physics_process(delta):
 func launch(dir: Vector2):
 	direction = dir
 	launched = true
-	beam_points.append(position)
+	if beam_points.size() < MAX_BEAM_POINTS:
+		beam_points.append(position)
 
 func spawn_wall_spark(pos: Vector2):
 	var manager = get_tree().get_first_node_in_group("game_manager")
