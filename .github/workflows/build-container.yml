@@ -1,0 +1,50 @@
+name: Build and Push Container
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+concurrency:
+  group: build-container-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-container:
+    name: Build and push container
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v26
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Build container with Nix
+        run: nix build .#container
+
+      - name: Install skopeo
+        run: sudo apt-get install -y skopeo
+
+      - name: Push container to GHCR
+        run: |
+          set -euo pipefail
+          skopeo login --username ${{ github.actor }} --password "${{ secrets.GITHUB_TOKEN }}" ghcr.io
+          RESULT=$(readlink -f ./result)
+          IMAGE_TAG=$(date +%Y%m%d_%H%M)
+          skopeo copy docker-archive://$RESULT docker://ghcr.io/2143-labs/godot-bricker:web-${IMAGE_TAG}
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            skopeo copy docker-archive://$RESULT docker://ghcr.io/2143-labs/godot-bricker:web-branch-${{ github.head_ref }}
+          else
+            skopeo copy docker-archive://$RESULT docker://ghcr.io/2143-labs/godot-bricker:web-latest
+          fi
