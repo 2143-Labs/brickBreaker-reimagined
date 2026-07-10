@@ -17,6 +17,7 @@ const OIL_BARREL_SCENE = preload("res://scenes/oil_barrel.tscn")
 const PICKUP_SCENE = preload("res://scenes/pickup.tscn")
 const BOSS_REWARD_SCRIPT = preload("res://scripts/boss_reward.gd")
 const SAVE_PATH = "user://highscore.save"
+const MIN_LAUNCH_ANGLE: float = deg_to_rad(20.0)
 
 @onready var brick_container = $BrickContainer
 @onready var ball_container = $BallContainer
@@ -673,6 +674,16 @@ func update_ammo_label_position():
 	ammo_label.offset_bottom = launch_point.y + 15
 	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 
+static func clamp_launch_direction(dir: Vector2) -> Vector2:
+	# Clamp to minimum angle from horizontal
+	if dir == Vector2.ZERO:
+		return Vector2(0.0, -1.0)
+	if -dir.y < sin(MIN_LAUNCH_ANGLE):
+		var clamped_y = -sin(MIN_LAUNCH_ANGLE)
+		var clamped_x = cos(MIN_LAUNCH_ANGLE) * sign(dir.x)
+		return Vector2(clamped_x, clamped_y)
+	return dir
+
 func _input(event):
 	if is_firing or not game_active or is_sliding or is_dropping or (boss_choice_container and is_instance_valid(boss_choice_container)):
 		return
@@ -685,9 +696,8 @@ func _input(event):
 		elif is_aiming:
 			is_aiming = false
 			var aim_pos = event.position if event is InputEventMouseButton else event.position
-			fire_direction = (aim_pos - launch_point).normalized()
-			if fire_direction.y < -0.1:
-				start_firing()
+			fire_direction = clamp_launch_direction((aim_pos - launch_point).normalized())
+			start_firing()
 			aim_line.clear_points()
 			trajectory_preview.clear_points()
 	if event is InputEventMouseMotion or event is InputEventScreenDrag:
@@ -697,12 +707,7 @@ func _input(event):
 			update_aim_line(aim_pos)
 
 func update_aim_line(target: Vector2):
-	var direction = (target - launch_point).normalized()
-	if direction.y >= -0.1:
-		aim_line.clear_points()
-		trajectory_preview.clear_points()
-		launcher.clear_aim()
-		return
+	var direction = clamp_launch_direction((target - launch_point).normalized())
 	launcher.set_aim(atan2(direction.y, direction.x))
 	aim_line.clear_points()
 	trajectory_preview.clear_points()
