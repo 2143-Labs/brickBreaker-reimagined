@@ -67,6 +67,19 @@ func _process(delta):
         hit_flash = max(0.0, hit_flash - delta * 4.0)
         queue_redraw()
 
+    # Mouse hover detection for tooltip
+    var mouse_pos = get_global_mouse_position()
+    var half_size = Vector2(25, 18)
+    var hovering = Rect2(position - half_size, half_size * 2).has_point(mouse_pos)
+    if hovering != _is_hovered:
+        _is_hovered = hovering
+        var mgr = get_tree().get_first_node_in_group("game_manager")
+        if mgr:
+            if hovering:
+                mgr.show_brick_tooltip(get_tooltip_text(), mouse_pos + Vector2(10, -25))
+            else:
+                mgr.hide_brick_tooltip()
+
 func _draw():
     var pts = _get_polygon()
     var ratio = clamp(float(health) / max(max_health, 1), 0.0, 1.0)
