@@ -13,7 +13,8 @@ concurrency:
 jobs:
   build-container:
     name: Build and push container
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, nixos]
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     permissions:
       contents: read
       packages: write
@@ -21,20 +22,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v26
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-      - name: Setup Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v8
 
       - name: Build container with Nix
         run: nix build .#container
 
-      - name: Install skopeo
-        run: sudo apt-get install -y skopeo
 
       - name: Push container to GHCR
         run: |
