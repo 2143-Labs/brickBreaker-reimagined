@@ -25,6 +25,11 @@ jobs:
 
       - name: Build container with Nix
         run: nix build .#container
+      - name: Push to Attic
+        run: |
+          set -euo pipefail
+          command -v attic >/dev/null || { echo "attic not installed; skipping"; exit 0; }
+          XDG_CONFIG_HOME=/etc attic push 2143nix ./result || echo "::warning::attic push failed"
 
 
       - name: Push container to GHCR
